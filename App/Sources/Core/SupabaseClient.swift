@@ -57,7 +57,12 @@ final class SupabaseClient {
         req.httpMethod = method
         req.timeoutInterval = 60
         req.setValue(anon, forHTTPHeaderField: "apikey")
-        req.setValue("Bearer \(bearer ?? anon)", forHTTPHeaderField: "Authorization")
+        // New "sb_publishable_…" keys are not JWTs: they go only in the apikey header.
+        if let bearer {
+            req.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
+        } else if !anon.hasPrefix("sb_") {
+            req.setValue("Bearer \(anon)", forHTTPHeaderField: "Authorization")
+        }
         for (k, v) in headers { req.setValue(v, forHTTPHeaderField: k) }
         if let json {
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")

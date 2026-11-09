@@ -471,7 +471,7 @@ struct CloudSetupView: View {
         SheetScaffold(title: tr("إعداد Supabase (مجاني)", "Supabase setup (free)")) {
             VStack(alignment: .leading, spacing: 6) {
                 Text(tr("١. أنشئ مشروع مجاني في supabase.com", "1. Create a free project at supabase.com"))
-                Text(tr("٢. Project Settings ← API: انسخ Project URL و anon public key", "2. Project Settings → API: copy the Project URL and anon public key"))
+                Text(tr("٢. Project Settings ← API Keys: انسخ الرابط والـ Publishable key", "2. Project Settings → API Keys: copy the URL and the Publishable key"))
                 Text(tr("٣. شغّل ملف setup.sql (موجود مع المشروع) في SQL Editor", "3. Run setup.sql (included with the project) in the SQL Editor"))
                 Text(tr("التفاصيل الكاملة في دليل الإعداد العربي.", "Full details are in the setup guide."))
                     .foregroundStyle(Theme.faint)
@@ -482,7 +482,7 @@ struct CloudSetupView: View {
 
             AYNField(title: "https://xxxx.supabase.co", icon: "link", text: $url, keyboard: .URL, focus: $focus, id: .sbURL)
                 .environment(\.layoutDirection, .leftToRight)
-            AYNField(title: "anon public key", icon: "key.fill", text: $key, focus: $focus, id: .sbKey)
+            AYNField(title: "Publishable key (sb_publishable_…) / anon key", icon: "key.fill", text: $key, focus: $focus, id: .sbKey)
                 .environment(\.layoutDirection, .leftToRight)
             if let result {
                 Label(result ? tr("الاتصال شغّال ✓", "Connected ✓") : tr("ما قدرت أتصل. تأكد من الرابط والمفتاح.", "Couldn't connect. Check the URL and key."),

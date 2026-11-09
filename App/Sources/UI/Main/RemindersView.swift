@@ -349,7 +349,7 @@ struct CelebrationView: View {
                 Circle()
                     .fill(colors[i % colors.count])
                     .frame(width: CGFloat(6 + i % 4 * 2), height: CGFloat(6 + i % 4 * 2))
-                    .offset(x: go ? cos(angle) * dist : 0, y: go ? sin(angle) * dist : 0)
+                    .offset(x: go ? CGFloat(cos(angle)) * dist : 0, y: go ? CGFloat(sin(angle)) * dist : 0)
                     .opacity(go ? 0 : 1)
             }
             EyeView(mood: .happy, size: 110)

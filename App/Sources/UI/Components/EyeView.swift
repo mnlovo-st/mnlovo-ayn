@@ -98,7 +98,7 @@ struct EyeView: View {
         case .reading(let p), .suspicious(let p):
             let x = (min(max(p, 0), 1) * 2 - 1) * maxX
             return CGSize(width: x, height: maxY * 0.55)
-        case .thinking: return CGSize(width: cos(angle) * maxX * 0.6, height: sin(angle) * maxY * 0.6)
+        case .thinking: return CGSize(width: CGFloat(cos(angle)) * maxX * 0.6, height: CGFloat(sin(angle)) * maxY * 0.6)
         case .sleepy: return CGSize(width: 0, height: maxY * 0.5)
         case .peek: return CGSize(width: maxX * 0.4, height: maxY * 0.4)
         default: return .zero

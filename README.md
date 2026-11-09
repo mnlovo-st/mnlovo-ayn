@@ -60,7 +60,7 @@ GitHub يبني التطبيق لك على أجهزة ماك مجانية.
    كود الدخول: {{ .Token }}
    ```
    (بدونه يوصلك رابط بدل كود).
-4. **Project Settings ← API**: انسخ **Project URL** و **anon public key**.
+4. **Project Settings ← API Keys**: انسخ **Publishable key** (يبدأ بـ `sb_publishable_`)، ومن زر **Connect** أعلى الصفحة انسخ **Project URL** (`https://xxxx.supabase.co`).
 5. في التطبيق: **الإعدادات ← إعداد Supabase** ← الصقهم ← **حفظ واختبار**.
 
 ملاحظات:
