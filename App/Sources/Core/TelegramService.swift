@@ -1,20 +1,26 @@
 import Foundation
+import SwiftUI
 
-/// Optional: posts a neat, formatted copy of what you add to a Telegram channel, group or chat
-/// through your own bot. 🔴 top-secret items are never sent.
+/// Optional: posts a neat, formatted copy of what you add to Telegram through the official
+/// MNLOVO SAVER bot (@mnlovo_sbot). The bot token lives only on our server (Supabase Edge Function);
+/// the app talks to it with your signed-in session. 🔴 top-secret items are never sent.
 final class TelegramService {
     static let shared = TelegramService()
+    static let botUsername = "mnlovo_sbot"
+    static let blue = Color(hex: 0x2AABEE)
+    private let fn = "saver-telegram"
 
-    struct Chat: Codable, Hashable, Identifiable {
+    struct Target: Codable, Hashable, Identifiable {
         var id: Int64
         var title: String
         var type: String
+        var enabled: Bool
 
         var typeTitle: String {
             switch type {
             case "channel": return tr("قناة", "Channel")
             case "group", "supergroup": return tr("قروب", "Group")
-            default: return tr("محادثة", "Chat")
+            default: return tr("محادثتك الخاصة", "Your private chat")
             }
         }
         var icon: String {
@@ -28,8 +34,7 @@ final class TelegramService {
 
     struct Settings: Codable, Equatable {
         var enabled = false
-        var chat: Chat?
-        var botName = ""
+        var targets: [Target] = []
         var accounts = true
         var passwords = false
         var reminders = true
@@ -40,18 +45,17 @@ final class TelegramService {
     }
 
     enum TGError: LocalizedError {
-        case badToken, server(String), noChat
+        case noCloud, server(String)
         var errorDescription: String? {
             switch self {
-            case .badToken: return tr("رمز البوت غلط. انسخه من BotFather مرة ثانية.", "Invalid bot token. Copy it again from BotFather.")
+            case .noCloud: return tr("لازم تكون مسجّل دخول بالسحابة (كود الإيميل) عشان نربط تيليجرام.",
+                                     "You need to be signed in to the cloud (email code) to link Telegram.")
             case .server(let m): return m
-            case .noChat: return tr("اختر المحادثة أول.", "Choose a chat first.")
             }
         }
     }
 
-    private let settingsKey = "tg.settings"
-    private let tokenAccount = "tg.token"
+    private let settingsKey = "tg.official.settings"
 
     var settings: Settings {
         get {
@@ -64,67 +68,82 @@ final class TelegramService {
         }
     }
 
-    var token: String? {
-        get { Keychain.get(tokenAccount).flatMap { String(data: $0, encoding: .utf8) } }
-        set {
-            if let v = newValue, !v.isEmpty { Keychain.set(Data(v.utf8), account: tokenAccount) }
-            else { Keychain.delete(tokenAccount) }
-        }
+    var cloudReady: Bool { SupabaseClient.shared.isConfigured && SupabaseClient.shared.hasSession }
+    var isLinked: Bool { !settings.targets.isEmpty }
+    var isReady: Bool { settings.enabled && cloudReady && settings.targets.contains { $0.enabled } }
+    var privateTarget: Target? { settings.targets.first { $0.type == "private" } }
+
+    // MARK: Server calls
+
+    private func call(_ action: String, _ extra: [String: Any] = [:]) async throws -> [String: Any] {
+        guard cloudReady else { throw TGError.noCloud }
+        var payload = extra
+        payload["action"] = action
+        return try await SupabaseClient.shared.callFunction(fn, payload)
     }
 
-    var isReady: Bool { settings.enabled && settings.chat != nil && token != nil }
-
-    // MARK: Bot API
-
-    private func call(_ method: String, token: String, body: [String: Any]? = nil) async throws -> Any {
-        guard let url = URL(string: "https://api.telegram.org/bot\(token)/\(method)") else { throw TGError.badToken }
-        var req = URLRequest(url: url)
-        req.timeoutInterval = 30
-        if let body {
-            req.httpMethod = "POST"
-            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            req.httpBody = try JSONSerialization.data(withJSONObject: body)
-        }
-        let (data, resp) = try await URLSession.shared.data(for: req)
-        let obj = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
-        if (resp as? HTTPURLResponse)?.statusCode == 401 || (resp as? HTTPURLResponse)?.statusCode == 404 { throw TGError.badToken }
-        guard obj["ok"] as? Bool == true else {
-            throw TGError.server((obj["description"] as? String) ?? tr("خطأ من تيليجرام", "Telegram error"))
-        }
-        return obj["result"] ?? [:]
+    /// One-time code that ties a Telegram chat to this account (valid 30 minutes).
+    private func linkCode() async throws -> (bot: String, code: String) {
+        let r = try await call("link")
+        guard let code = r["code"] as? String else { throw TGError.server(tr("ما قدرنا نجهّز رابط الربط.", "Couldn't prepare the link.")) }
+        return ((r["bot"] as? String) ?? Self.botUsername, code)
     }
 
-    /// Checks the token and returns the bot's @username.
-    func verify(token: String) async throws -> String {
-        let r = try await call("getMe", token: token.trimmingCharacters(in: .whitespacesAndNewlines))
-        guard let me = r as? [String: Any], let u = me["username"] as? String else { throw TGError.badToken }
-        return u
+    /// Opens the bot in Telegram; tapping Start links the private chat.
+    func privateLink() async throws -> URL {
+        let c = try await linkCode()
+        return URL(string: "https://t.me/\(c.bot)?start=\(c.code)")!
     }
 
-    /// Chats where the bot was added or received a message recently.
-    func discoverChats(token: String) async throws -> [Chat] {
-        let r = try await call("getUpdates", token: token,
-                               body: ["allowed_updates": ["message", "channel_post", "my_chat_member", "edited_channel_post"], "limit": 100])
-        var found: [Int64: Chat] = [:]
-        for u in (r as? [[String: Any]]) ?? [] {
-            for key in ["message", "channel_post", "edited_channel_post", "my_chat_member"] {
-                guard let m = u[key] as? [String: Any], let c = m["chat"] as? [String: Any],
-                      let id = (c["id"] as? NSNumber)?.int64Value else { continue }
-                let type = c["type"] as? String ?? "private"
-                let title = (c["title"] as? String)
-                    ?? [c["first_name"] as? String, c["last_name"] as? String].compactMap { $0 }.joined(separator: " ")
-                found[id] = Chat(id: id, title: title.isEmpty ? (c["username"] as? String ?? "\(id)") : title, type: type)
-            }
+    /// Telegram shows the user's groups; the bot joins the chosen one and links it.
+    func groupLink() async throws -> URL {
+        let c = try await linkCode()
+        return URL(string: "https://t.me/\(c.bot)?startgroup=\(c.code)&admin=post_messages")!
+    }
+
+    /// Telegram shows the user's channels; the bot is added as an admin that can only post.
+    func channelLink() -> URL {
+        URL(string: "https://t.me/\(Self.botUsername)?startchannel&admin=post_messages")!
+    }
+
+    /// Fetches linked chats from the server and caches them.
+    @discardableResult
+    func refresh() async throws -> [Target] {
+        let r = try await call("status")
+        let list = (r["targets"] as? [[String: Any]] ?? []).compactMap { t -> Target? in
+            guard let id = (t["chat_id"] as? NSNumber)?.int64Value else { return nil }
+            return Target(id: id, title: t["title"] as? String ?? "\(id)", type: t["type"] as? String ?? "private",
+                          enabled: t["enabled"] as? Bool ?? true)
         }
-        return Array(found.values).sorted { $0.title < $1.title }
+        var s = settings
+        let wasEmpty = s.targets.isEmpty
+        s.targets = list
+        if wasEmpty && !list.isEmpty { s.enabled = true }
+        if list.isEmpty { s.enabled = false }
+        settings = s
+        return list
     }
 
-    func send(_ html: String, to chat: Chat? = nil) async throws {
-        guard let token else { throw TGError.badToken }
-        guard let c = chat ?? settings.chat else { throw TGError.noChat }
-        _ = try await call("sendMessage", token: token, body: [
-            "chat_id": c.id, "text": html, "parse_mode": "HTML", "disable_web_page_preview": true
-        ])
+    func setEnabled(_ target: Target, _ on: Bool) async throws {
+        _ = try await call("toggle", ["chat_id": target.id, "enabled": on])
+        var s = settings
+        if let i = s.targets.firstIndex(where: { $0.id == target.id }) { s.targets[i].enabled = on }
+        settings = s
+    }
+
+    func remove(_ target: Target) async throws {
+        _ = try await call("remove", ["chat_id": target.id])
+        var s = settings
+        s.targets.removeAll { $0.id == target.id }
+        if s.targets.isEmpty { s.enabled = false }
+        settings = s
+    }
+
+    /// Sends to every enabled linked chat; returns how many received it.
+    @discardableResult
+    func send(_ html: String) async throws -> Int {
+        let r = try await call("send", ["text": html])
+        return (r["sent"] as? NSNumber)?.intValue ?? 0
     }
 
     // MARK: Events
@@ -158,7 +177,8 @@ final class TelegramService {
         guard let text else { return }
         Task {
             do {
-                try await send(text)
+                let n = try await send(text)
+                if n == 0 { try? await refresh() }
                 UserDefaults.standard.removeObject(forKey: "tg.lastError")
             } catch {
                 UserDefaults.standard.set(error.localizedDescription, forKey: "tg.lastError")

@@ -102,6 +102,16 @@ final class SupabaseClient {
         return tr("خطأ من الخادم", "Server error") + " (\(status))"
     }
 
+    /// Calls an Edge Function as the signed-in user and returns its JSON.
+    func callFunction(_ name: String, _ payload: [String: Any]) async throws -> [String: Any] {
+        let s = try await validSession()
+        let (data, http) = try await request("/functions/v1/\(name)", json: payload, bearer: s.accessToken)
+        guard (200..<300).contains(http.statusCode) else { throw SBError.server(message(from: data, status: http.statusCode)) }
+        return (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+    }
+
+    var hasSession: Bool { session != nil }
+
     /// Simple connectivity test for the settings screen.
     func testConnection() async -> Bool {
         guard let result = try? await request("/auth/v1/settings", method: "GET") else { return false }

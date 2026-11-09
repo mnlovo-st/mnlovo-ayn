@@ -353,15 +353,22 @@ final class AppState: ObservableObject {
         if sound { SoundFX.shared.play(.lock); Haptics.tap(.medium) }
     }
 
+    // A short, user-started trip to another app (e.g. linking Telegram) shouldn't lock the vault.
+    private var tripUntil: Date?
+    private var currentGrace: Double = 5
+    func allowShortTrip(_ seconds: Double = 120) { tripUntil = Date().addingTimeInterval(seconds) }
+    private var onTrip: Bool { (tripUntil ?? .distantPast) > Date() }
+
     func scenePhaseChanged(_ p: ScenePhase) {
         switch p {
         case .active:
             privacyCover = false
             endBackgroundTask()
-            if let t = backgroundedAt, isUnlocked, Date().timeIntervalSince(t) >= Double(autoLockSeconds) {
+            if let t = backgroundedAt, isUnlocked, Date().timeIntervalSince(t) >= currentGrace {
                 lock(sound: false)
             }
             backgroundedAt = nil
+            tripUntil = nil
             if isUnlocked { reminders = RemindersStore.load(space) }
             LiveActivityManager.sync()
         case .inactive:
@@ -370,17 +377,19 @@ final class AppState: ObservableObject {
             privacyCover = true
             if backgroundedAt == nil { backgroundedAt = Date() }
             if !isUnlocked { bioKey = nil }
-            if autoLockSeconds == 0 { lock(sound: false); return }
+            let trip = onTrip
+            currentGrace = trip ? max(Double(autoLockSeconds), tripUntil!.timeIntervalSinceNow) : Double(autoLockSeconds)
+            if currentGrace <= 0 { lock(sound: false); return }
             // Stay alive just long enough to lock and wipe keys from memory after the grace period.
             if backgroundTask == .invalid {
                 backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "saver.autolock") { [weak self] in
                     Task { @MainActor in
-                        self?.lock(sound: false)
+                        if !trip { self?.lock(sound: false) }
                         self?.endBackgroundTask()
                     }
                 }
             }
-            let grace = Double(autoLockSeconds)
+            let grace = currentGrace
             DispatchQueue.main.asyncAfter(deadline: .now() + grace) { [weak self] in
                 guard let self, let t = self.backgroundedAt, Date().timeIntervalSince(t) >= grace - 0.05 else { return }
                 self.lock(sound: false)
