@@ -1,0 +1,107 @@
+name: AYN
+options:
+  bundleIdPrefix: com.mnlovo
+  deploymentTarget:
+    iOS: "17.0"
+  developmentLanguage: ar
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    SWIFT_STRICT_CONCURRENCY: minimal
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+    TARGETED_DEVICE_FAMILY: "1"
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGN_IDENTITY: ""
+    CODE_SIGNING_REQUIRED: "NO"
+    CODE_SIGNING_ALLOWED: "NO"
+    ENABLE_USER_SCRIPT_SANDBOXING: "NO"
+    GENERATE_INFOPLIST_FILE: "NO"
+
+targets:
+  AYN:
+    type: application
+    platform: iOS
+    sources:
+      - path: App/Sources
+      - path: App/Resources
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.mnlovo.ayn
+        PRODUCT_NAME: AYN
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        INFOPLIST_FILE: App/Info.plist
+        CODE_SIGN_ENTITLEMENTS: App/AYN.entitlements
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDevelopmentRegion: ar
+        CFBundleDisplayName: AYN
+        CFBundleName: AYN
+        CFBundleExecutable: $(EXECUTABLE_NAME)
+        CFBundleIdentifier: $(PRODUCT_BUNDLE_IDENTIFIER)
+        CFBundleInfoDictionaryVersion: "6.0"
+        CFBundlePackageType: APPL
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleLocalizations: [ar, en]
+        LSRequiresIPhoneOS: true
+        UIApplicationSupportsIndirectInputEvents: true
+        UILaunchScreen:
+          UIColorName: LaunchBG
+        UIUserInterfaceStyle: Dark
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UIRequiredDeviceCapabilities: [arm64]
+        NSSupportsLiveActivities: true
+        ITSAppUsesNonExemptEncryption: false
+        NSFaceIDUsageDescription: "AYN uses Face ID to unlock your encrypted vault. | يستخدم AYN بصمة الوجه لفتح خزنتك المشفّرة."
+        NSCameraUsageDescription: "AYN uses the camera to scan 2FA QR codes, scan documents, and (if you enable it) photograph intruders. | يستخدم AYN الكاميرا لمسح رموز التحقق والمستندات وتصوير المتطفلين إذا فعّلت الميزة."
+        NSPhotoLibraryUsageDescription: "AYN can delete the original photo after moving it into your encrypted vault. | يقدر AYN يحذف الصورة الأصلية بعد نقلها للخزنة المشفّرة."
+        NSPhotoLibraryAddUsageDescription: "AYN can save a decrypted photo back to your library when you ask. | يقدر AYN يرجّع الصورة للاستوديو إذا طلبت."
+        NSCalendarsWriteOnlyAccessUsageDescription: "AYN adds your reminders to the calendar when you ask. | يضيف AYN تذكيراتك للتقويم إذا طلبت."
+        NSCalendarsUsageDescription: "AYN adds your reminders to the calendar when you ask. | يضيف AYN تذكيراتك للتقويم إذا طلبت."
+    entitlements:
+      path: App/AYN.entitlements
+      properties:
+        com.apple.security.application-groups: [group.com.mnlovo.ayn]
+    dependencies:
+      - target: AYNWidget
+    scheme: {}
+
+  AYNWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Widget
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.mnlovo.ayn.widget
+        PRODUCT_NAME: AYNWidget
+        INFOPLIST_FILE: Widget/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Widget/AYNWidget.entitlements
+        SKIP_INSTALL: "YES"
+    info:
+      path: Widget/Info.plist
+      properties:
+        CFBundleDevelopmentRegion: ar
+        CFBundleDisplayName: AYN
+        CFBundleName: AYNWidget
+        CFBundleExecutable: $(EXECUTABLE_NAME)
+        CFBundleIdentifier: $(PRODUCT_BUNDLE_IDENTIFIER)
+        CFBundleInfoDictionaryVersion: "6.0"
+        CFBundlePackageType: XPC!
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    entitlements:
+      path: Widget/AYNWidget.entitlements
+      properties:
+        com.apple.security.application-groups: [group.com.mnlovo.ayn]

@@ -1,0 +1,70 @@
+name: Build IPA
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build (unsigned)
+        run: |
+          set -o pipefail
+          xcodebuild -project AYN.xcodeproj -target AYN -configuration Release \
+            -sdk iphoneos \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build 2>&1 | tee build.log | grep -E "error:|warning: unable|BUILD" || true
+          test -d build/Release-iphoneos/AYN.app || (grep -n "error:" build.log | head -80; exit 1)
+
+      - name: Ad-hoc sign with entitlements (Sideloadly/AltStore re-sign later)
+        run: |
+          APP=build/Release-iphoneos/AYN.app
+          if [ -d "$APP/PlugIns/AYNWidget.appex" ]; then
+            codesign --force --sign - --entitlements Widget/AYNWidget.entitlements "$APP/PlugIns/AYNWidget.appex"
+          fi
+          codesign --force --sign - --entitlements App/AYN.entitlements "$APP"
+
+      - name: Package IPA
+        run: |
+          rm -rf Payload && mkdir Payload
+          cp -R build/Release-iphoneos/AYN.app Payload/
+          zip -qry MNLOVO-AYN.ipa Payload
+          ls -lh MNLOVO-AYN.ipa
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+          if-no-files-found: ignore
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MNLOVO-AYN
+          path: MNLOVO-AYN.ipa
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: MNLOVO AYN — build ${{ github.run_number }}
+          files: MNLOVO-AYN.ipa
+          make_latest: true
