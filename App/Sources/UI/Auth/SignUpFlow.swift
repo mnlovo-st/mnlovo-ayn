@@ -144,7 +144,7 @@ struct SignUpFlow: View {
                      contentType: .username, focus: $focus, id: .username) { focus = .email }
             AYNField(title: tr("الإيميل", "Email"), icon: "envelope.fill", text: $input.email,
                      keyboard: .emailAddress, contentType: .emailAddress, focus: $focus, id: .email) { focus = .phone }
-            AYNField(title: tr("رقم الجوال", "Phone number"), icon: "phone.fill", text: $input.phone,
+            AYNField(title: tr("رقم التلفون", "Phone number"), icon: "phone.fill", text: $input.phone,
                      keyboard: .phonePad, contentType: .telephoneNumber, focus: $focus, id: .phone)
             HStack {
                 Image(systemName: "gift.fill").foregroundStyle(Theme.sub).frame(width: 24)
@@ -159,7 +159,7 @@ struct SignUpFlow: View {
             .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Theme.surface))
             .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Theme.stroke))
 
-            Label(tr("كل شي يتخزن مشفّر على جوالك فقط.", "Everything is stored encrypted on your iPhone only."),
+            Label(tr("كل شي يتخزن مشفّر في تلفونك فقط.", "Everything is stored encrypted on your iPhone only."),
                   systemImage: "lock.shield")
                 .font(Theme.font(13)).foregroundStyle(Theme.sub)
         }
@@ -170,7 +170,7 @@ struct SignUpFlow: View {
             Text(tr("أنشئ كلمة السر", "Create your password"))
                 .font(Theme.font(26, .heavy)).foregroundStyle(Theme.text)
             PasswordCreator(password: $input.password, confirm: $confirm, focus: $focus)
-            Label(tr("ما نقدر نسترجعها لك — بس مفتاح الاسترجاع يقدر.", "We can't recover it for you — only your recovery key can."),
+            Label(tr("ما نقدر نردها لك، بس مفتاح الاسترجاع يقدر.", "We can't recover it for you, only your recovery key can."),
                   systemImage: "info.circle")
                 .font(Theme.font(13)).foregroundStyle(Theme.sub)
         }
@@ -220,8 +220,7 @@ struct SignUpFlow: View {
         VStack(spacing: 16) {
             StepHeader(icon: "lock.rotation",
                        title: tr("التحقق بخطوتين (2FA)", "Two-factor (2FA)"),
-                       subtitle: tr("أضف MNLOVO SAVER لتطبيق «كلمات السر» في الآيفون، وكل ٣٠ ثانية يطلع لك رمز جديد مثل مايكروسوفت.",
-                                    "Add MNLOVO SAVER to the iPhone Passwords app — it will show a new code every 30 seconds, like Microsoft."))
+                       subtitle: tr("أضف MNLOVO SAVER لتطبيق «كلمات السر» في الآيفون، وكل ٣٠ ثانية يطلع لك رمز جديد", "Add MNLOVO SAVER to the iPhone Passwords app — it will show a new code every 30 seconds."))
             TwoFactorSetupCard(totp: input.totp)
             Text(tr("اكتب الرمز اللي يطلع لك:", "Enter the code it shows:"))
                 .font(Theme.font(15, .semibold)).foregroundStyle(Theme.text)
@@ -234,8 +233,7 @@ struct SignUpFlow: View {
         VStack(spacing: 16) {
             StepHeader(icon: "key.horizontal.fill",
                        title: tr("مفتاح الاسترجاع", "Recovery key"),
-                       subtitle: tr("اكتبه على ورقة واحفظه بمكان آمن. إذا نسيت كلمة السر تحتاجه مع الإيميل والجوال وتاريخ الميلاد. بدونه ما يرجع الحساب أبداً.",
-                                    "Write it on paper and keep it safe. If you forget your password you'll need it with your email, phone and birth date. Without it the account can never be recovered."))
+                       subtitle: tr("اكتبه على ورقة واحفظه بمكان آمن. إذا نسيت كلمة السر تحتاجه مع الإيميل والتلفون وتاريخ الميلاد. بدونه ما يرجع الحساب أبداً.", "Write it on paper and keep it safe. If you forget your password you'll need it with your email, phone and birth date. Without it the account can never be recovered."))
             RecoveryKeyCard(key: input.recoveryKey)
             Text(tr("للتأكيد، اكتب آخر ٤ أحرف (المجموعة ٦):", "To confirm, type the last 4 characters (group 6):"))
                 .font(Theme.font(14, .semibold)).foregroundStyle(Theme.text)

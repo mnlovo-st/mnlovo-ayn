@@ -125,7 +125,7 @@ struct WelcomeView: View {
                 Text(Brand.appName)
                     .font(Theme.font(36, .black))
                     .foregroundStyle(Theme.brandGradient)
-                Text(tr("خزنتك الذكية. كل شي مشفّر على جوالك.", "Your smart vault. Everything encrypted on your iPhone."))
+                Text(tr("خزنتك الذكية، كل شي مشفّر في تلفونك.", "Your smart vault. Everything encrypted on your iPhone."))
                     .font(Theme.font(16, .medium))
                     .foregroundStyle(Theme.sub)
                     .multilineTextAlignment(.center)
@@ -148,7 +148,7 @@ struct WelcomeView: View {
 
             VStack(spacing: 12) {
                 PrimaryButton(title: tr("إنشاء حساب", "Create account"), icon: "sparkles") { showSignUp = true }
-                SecondaryButton(title: tr("عندي حساب — تسجيل دخول", "I have an account — sign in"), icon: "person.crop.circle.badge.checkmark") {
+                SecondaryButton(title: tr("عندي حساب، تسجيل دخول", "I have an account, sign in"), icon: "person.crop.circle.badge.checkmark") {
                     showRestore = true
                 }
                 Text(Brand.copyright).font(Theme.font(11, .bold)).foregroundStyle(Theme.faint).padding(.top, 4)

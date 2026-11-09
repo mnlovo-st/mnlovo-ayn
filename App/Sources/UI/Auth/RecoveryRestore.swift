@@ -63,7 +63,7 @@ struct RecoveryView: View {
         case 0: return tr("تحقق من الهوية", "Verify identity")
         case 1: return tr("تحقق من الكود", "Verify code")
         case 2: return tr("التالي", "Next")
-        default: return tr("حفظت المفتاح — افتح الخزنة", "I saved it — open vault")
+        default: return tr("حفظت المفتاح، افتح الخزنة", "I saved it, open vault")
         }
     }
 
@@ -264,7 +264,7 @@ struct RestoreView: View {
             AYNField(title: tr("كلمة السر أو مفتاح الاسترجاع", "Password or recovery key"), icon: "key.fill",
                      text: $secret, secure: true, focus: $focus, id: .password)
             if state.hasAccount {
-                Label(tr("تنبيه: هذا يستبدل البيانات الموجودة على هذا الجوال.", "Note: this replaces the data on this phone."),
+                Label(tr("تنبيه: هذا يستبدل البيانات الموجودة على هذا التلفون.", "Note: this replaces the data on this phone."),
                       systemImage: "exclamationmark.triangle.fill")
                     .font(Theme.font(13, .semibold)).foregroundStyle(Theme.warn)
             }

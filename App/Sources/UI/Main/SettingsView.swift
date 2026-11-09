@@ -391,7 +391,7 @@ struct TwoFAShowSheet: View {
     var body: some View {
         SheetScaffold(title: tr("التحقق بخطوتين", "Two-factor")) {
             if unlocked, let t = state.profile?.totp {
-                Text(tr("لو غيّرت جوالك أو حذفت الرمز من «كلمات السر»، أضفه من جديد من هنا.", "If you changed phones or removed the code from Passwords, add it again here."))
+                Text(tr("لو غيّرت ايفونك أو حذفت الرمز من «كلمات السر»، أضفه من جديد من هنا.", "If you changed phones or removed the code from Passwords, add it again here."))
                     .font(Theme.font(14)).foregroundStyle(Theme.sub)
                 TwoFactorSetupCard(totp: t)
                 TOTPBadge(totp: t, big: true)
@@ -493,6 +493,7 @@ struct IntruderLogView: View {
     @EnvironmentObject var state: AppState
     @State private var events: [IntruderEvent] = []
     @State private var confirmClear = false
+    @State private var viewing: IntruderEvent?
 
     var body: some View {
         SheetScaffold(title: tr("سجل المتطفلين", "Intruder log")) {
@@ -501,23 +502,36 @@ struct IntruderLogView: View {
                                subtitle: tr("محد حاول يدخل. نام مرتاح 😌", "Nobody tried to get in. Sleep well 😌"))
             } else {
                 ForEach(events) { e in
-                    HStack(spacing: 12) {
-                        if let d = e.photo, let img = UIImage(data: d) {
-                            Image(uiImage: img).resizable().scaledToFill()
-                                .frame(width: 64, height: 64).clipShape(RoundedRectangle(cornerRadius: 14))
-                        } else {
-                            Image(systemName: e.reason == .screenshot ? "camera.viewfinder" : "exclamationmark.lock.fill")
-                                .font(.system(size: 24)).foregroundStyle(Theme.warn)
-                                .frame(width: 64, height: 64)
-                                .background(RoundedRectangle(cornerRadius: 14).fill(Theme.warn.opacity(0.12)))
+                    Button {
+                        if e.photo != nil { Haptics.tap(); viewing = e }
+                    } label: {
+                        HStack(spacing: 12) {
+                            if let d = e.photo, let img = UIImage(data: d) {
+                                Image(uiImage: img).resizable().scaledToFill()
+                                    .frame(width: 64, height: 64).clipShape(RoundedRectangle(cornerRadius: 14))
+                                    .overlay(alignment: .bottomTrailing) {
+                                        Image(systemName: "arrow.up.left.and.arrow.down.right")
+                                            .font(.system(size: 9, weight: .bold)).foregroundStyle(.white)
+                                            .padding(4).background(Circle().fill(.black.opacity(0.55))).padding(4)
+                                    }
+                            } else {
+                                Image(systemName: e.reason == .screenshot ? "camera.viewfinder" : "exclamationmark.lock.fill")
+                                    .font(.system(size: 24)).foregroundStyle(Theme.warn)
+                                    .frame(width: 64, height: 64)
+                                    .background(RoundedRectangle(cornerRadius: 14).fill(Theme.warn.opacity(0.12)))
+                            }
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(e.title).font(Theme.font(15, .bold)).foregroundStyle(Theme.text)
+                                Text(IntruderStamp.exactDate(e.date)).font(Theme.font(12)).foregroundStyle(Theme.sub)
+                            }
+                            Spacer()
+                            if e.photo != nil {
+                                Image(systemName: "chevron.forward").font(.system(size: 12, weight: .bold)).foregroundStyle(Theme.faint)
+                            }
                         }
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(e.title).font(Theme.font(15, .bold)).foregroundStyle(Theme.text)
-                            Text(Fmt.date(e.date)).font(Theme.font(12)).foregroundStyle(Theme.sub)
-                        }
-                        Spacer()
+                        .glass(10)
                     }
-                    .glass(10)
+                    .buttonStyle(PressScale())
                 }
                 SecondaryButton(title: tr("مسح السجل", "Clear log"), icon: "trash", color: Theme.danger) { confirmClear = true }
             }
@@ -529,6 +543,135 @@ struct IntruderLogView: View {
         .confirmationDialog(tr("مسح السجل؟", "Clear log?"), isPresented: $confirmClear) {
             Button(tr("مسح", "Clear"), role: .destructive) { state.clearIntruderLog(); events = [] }
         }
+        .fullScreenCover(item: $viewing) { e in IntruderPhotoViewer(event: e).environmentObject(state) }
+    }
+}
+
+/// Adds a branded caption band (app name + exact date/time) under an intruder photo.
+enum IntruderStamp {
+    static func exactDate(_ d: Date) -> String {
+        let f = DateFormatter()
+        f.locale = AppLanguage.current.locale
+        f.dateFormat = AppLanguage.current == .ar ? "EEEE d MMMM yyyy · h:mm:ss a" : "EEEE, d MMMM yyyy · h:mm:ss a"
+        return f.string(from: d)
+    }
+
+    static func stamped(_ img: UIImage, event: IntruderEvent) -> UIImage {
+        let w = img.size.width
+        let band = max(90, w * 0.2)
+        let size = CGSize(width: w, height: img.size.height + band)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = img.scale
+        let renderer = UIGraphicsImageRenderer(size: size, format: format)
+        return renderer.image { ctx in
+            img.draw(in: CGRect(origin: .zero, size: img.size))
+            let bandRect = CGRect(x: 0, y: img.size.height, width: w, height: band)
+            UIColor(red: 0.024, green: 0.027, blue: 0.047, alpha: 1).setFill()
+            ctx.fill(bandRect)
+            let colors = [UIColor(red: 0.22, green: 0.9, blue: 0.78, alpha: 1).cgColor,
+                          UIColor(red: 0.48, green: 0.42, blue: 1, alpha: 1).cgColor] as CFArray
+            if let g = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 1]) {
+                ctx.cgContext.saveGState()
+                ctx.cgContext.clip(to: CGRect(x: 0, y: img.size.height, width: w, height: max(3, band * 0.04)))
+                ctx.cgContext.drawLinearGradient(g, start: CGPoint(x: 0, y: 0), end: CGPoint(x: w, y: 0), options: [])
+                ctx.cgContext.restoreGState()
+            }
+            let titleFont = UIFont(name: FontBook.name(for: .heavy) ?? "", size: band * 0.24) ?? .boldSystemFont(ofSize: band * 0.24)
+            let subFont = UIFont(name: FontBook.name(for: .medium) ?? "", size: band * 0.15) ?? .systemFont(ofSize: band * 0.15)
+            let para = NSMutableParagraphStyle()
+            para.alignment = .center
+            let title = NSAttributedString(string: Brand.appName, attributes: [
+                .font: titleFont, .foregroundColor: UIColor(red: 0.22, green: 0.9, blue: 0.78, alpha: 1),
+                .kern: band * 0.02, .paragraphStyle: para])
+            let sub = NSAttributedString(string: "\(event.title) · \(exactDate(event.date))", attributes: [
+                .font: subFont, .foregroundColor: UIColor(white: 0.85, alpha: 1), .paragraphStyle: para])
+            title.draw(in: CGRect(x: 8, y: img.size.height + band * 0.18, width: w - 16, height: band * 0.36))
+            sub.draw(in: CGRect(x: 8, y: img.size.height + band * 0.56, width: w - 16, height: band * 0.36))
+        }
+    }
+}
+
+struct IntruderPhotoViewer: View {
+    @EnvironmentObject var state: AppState
+    @Environment(\.dismiss) private var dismiss
+    var event: IntruderEvent
+    @State private var scale: CGFloat = 1
+    @State private var shareURL: URL?
+
+    private var image: UIImage? { event.photo.flatMap { UIImage(data: $0) } }
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            VStack(spacing: 0) {
+                HStack {
+                    CircleIconButton(icon: "xmark", size: 40) { dismiss() }
+                    Spacer()
+                    Text(event.title).font(Theme.font(16, .bold)).foregroundStyle(.white)
+                    Spacer()
+                    Color.clear.frame(width: 40, height: 40)
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+
+                Spacer(minLength: 10)
+                if let img = image {
+                    VStack(spacing: 0) {
+                        Image(uiImage: img)
+                            .resizable()
+                            .scaledToFit()
+                            .scaleEffect(scale)
+                            .gesture(MagnifyGesture().onChanged { v in scale = max(1, min(4, v.magnification)) }
+                                .onEnded { _ in withAnimation(.spring) { scale = 1 } })
+                        VStack(spacing: 4) {
+                            Rectangle().fill(Theme.gradient).frame(height: 3)
+                            Text(Brand.appName).font(Theme.font(20, .heavy)).foregroundStyle(Theme.accent).tracking(1.5)
+                                .padding(.top, 8)
+                            Text(IntruderStamp.exactDate(event.date))
+                                .font(Theme.font(14, .medium)).foregroundStyle(.white.opacity(0.85))
+                                .padding(.bottom, 12)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .background(Theme.bg)
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 18))
+                    .padding(.horizontal, 16)
+                }
+                Spacer(minLength: 10)
+
+                HStack(spacing: 12) {
+                    PrimaryButton(title: tr("حفظ في الصور", "Save to Photos"), icon: "square.and.arrow.down") { saveToPhotos() }
+                    CircleIconButton(icon: "square.and.arrow.up", size: 56, tint: Theme.accent) { share() }
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 14)
+            }
+        }
+        .sheet(isPresented: Binding(get: { shareURL != nil }, set: { if !$0 { cleanup() } })) {
+            if let shareURL { ShareSheet(items: [shareURL]) }
+        }
+    }
+
+    private func saveToPhotos() {
+        guard let img = image else { return }
+        UIImageWriteToSavedPhotosAlbum(IntruderStamp.stamped(img, event: event), nil, nil, nil)
+        Haptics.success()
+        state.show(tr("انحفظت الصورة في الاستوديو ✓", "Saved to Photos ✓"), icon: "photo.fill")
+    }
+
+    private func share() {
+        guard let img = image, let data = IntruderStamp.stamped(img, event: event).jpegData(compressionQuality: 0.92) else { return }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd_HH-mm-ss"
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("MNLOVO-SAVER-intruder-\(f.string(from: event.date)).jpg")
+        try? data.write(to: url, options: .atomic)
+        shareURL = url
+    }
+
+    private func cleanup() {
+        if let u = shareURL { try? FileManager.default.removeItem(at: u) }
+        shareURL = nil
     }
 }
 

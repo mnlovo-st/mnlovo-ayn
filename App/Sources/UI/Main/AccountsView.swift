@@ -346,7 +346,7 @@ struct AccountEditorView: View {
                     BrandAvatar(name: item.service.isEmpty ? "?" : item.service, size: 64)
                         .animation(.spring, value: item.service)
 
-                    AYNField(title: tr("التطبيق / الموقع (مثلاً Instagram)", "App / site (e.g. Instagram)"), icon: "app.fill",
+                    AYNField(title: tr("التطبيق / الموقع", "App / site"), icon: "app.fill",
                              text: $item.service, focus: $focus, id: .service) { focus = .login }
                     if focus == .service && !item.service.isEmpty {
                         let matches = BrandAvatar.knownNames.filter { $0.lowercased().hasPrefix(item.service.lowercased()) && $0 != item.service }

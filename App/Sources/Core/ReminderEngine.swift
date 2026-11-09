@@ -59,7 +59,7 @@ enum ReminderEngine {
             t = t.addingTimeInterval(step)
         }
         out.append(Planned(date: r.due, title: name,
-                           body: tr("⏰ انتهى الوقت الحين. سويتها؟", "⏰ Time's up now. Did you do it?")))
+                           body: tr("⏰ خلص الوقت الحين. سويتها؟", "⏰ Time's up now. Did you do it?")))
 
         // Overdue follow-ups
         for h in stride(from: 3, through: 24, by: 3) {
