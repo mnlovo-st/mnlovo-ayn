@@ -402,7 +402,7 @@ struct AccountEditorView: View {
                                   enabled: !item.service.trimmingCharacters(in: .whitespaces).isEmpty) {
                         item.service = item.service.trimmingCharacters(in: .whitespaces)
                         state.upsert(item)
-                        FX.success()
+                        Haptics.success()
                         dismiss()
                     }
                 }
@@ -495,7 +495,7 @@ struct AccountEditorView: View {
             if item.login.isEmpty { item.login = t.account }
             withAnimation { item.totp = t }
             totpError = nil
-            FX.success()
+            Haptics.success()
         } else {
             totpError = tr("ما قدرت أقرأ المفتاح.", "Couldn't read that key.")
             FX.error()

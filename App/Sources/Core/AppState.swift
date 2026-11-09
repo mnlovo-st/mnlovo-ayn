@@ -25,7 +25,7 @@ struct NewAccountInput {
     var phone = ""
     var birthDate = Calendar.current.date(byAdding: .year, value: -20, to: Date()) ?? Date()
     var password = ""
-    var totp = TOTP.generate(issuer: "MNLOVO AYN", account: "")
+    var totp = TOTP.generate(issuer: Brand.issuer, account: "")
     var recoveryKey = PasswordTools.recoveryKey()
     var emailVerified = false
     var enableBiometrics = true
@@ -50,7 +50,7 @@ struct BackupPayload: Codable {
 @MainActor
 final class AppState: ObservableObject {
     enum Phase: Equatable { case intro, welcome, locked, unlocked }
-    enum UnlockOutcome: Equatable { case needs2FA, wrong, lockedOut(Date) }
+    enum UnlockOutcome: Equatable { case unlocked, needs2FA, wrong, lockedOut(Date) }
 
     @Published var phase: Phase = .intro
     @Published private(set) var space: VaultSpace = .real
@@ -65,10 +65,16 @@ final class AppState: ObservableObject {
     @Published var screenCaptured = false
     @Published var busy: String?
     @Published var newIntrusions = 0
+    @Published var syncing = false
+    @Published var syncError: String?
 
     private var masterKey: SymmetricKey?
     private var pending: (space: VaultSpace, key: SymmetricKey)?
+    private var bioKey: SymmetricKey?
     private var backgroundedAt: Date?
+    private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
+    private var backupTask: Task<Void, Never>?
+    private var sectionFails = 0
     private let defaults = UserDefaults.standard
 
     init() {
@@ -88,17 +94,19 @@ final class AppState: ObservableObject {
     var hasDuress: Bool { VaultStorage.exists(.decoy) }
     var hasSectionPassword: Bool { profile?.sectionHash != nil }
 
+    /// Seconds the app may stay in the background before it locks again (default 5).
     var autoLockSeconds: Int {
-        get { defaults.object(forKey: "sec.autolock") as? Int ?? 0 }
+        get { defaults.object(forKey: "sec.autolock") as? Int ?? 5 }
         set { defaults.set(newValue, forKey: "sec.autolock"); objectWillChange.send() }
     }
-    var fullLoginDays: Int { defaults.object(forKey: "sec.fullLoginDays") as? Int ?? 14 }
-    var biometricsOn: Bool { (defaults.object(forKey: "sec.biometric") as? Bool ?? false) && SecureEnclaveVault.isEnrolled(.real) }
-    var fullLoginExpired: Bool {
-        let last = defaults.double(forKey: "sec.lastFullLogin")
-        return last == 0 || Date().timeIntervalSince1970 - last > Double(fullLoginDays) * 86400
+    var biometricsWanted: Bool { defaults.object(forKey: "sec.biometric") as? Bool ?? true }
+    var biometricsOn: Bool { biometricsWanted && SecureEnclaveVault.isEnrolled(.real) }
+    /// Entry = Face ID + password. Without Face ID: password + 2FA code.
+    var canUseBiometrics: Bool { biometricsOn && Biometrics.isAvailable }
+    var bioPassed: Bool { bioKey != nil }
+    var sectionKind: PasscodeKind {
+        PasscodeKind(rawValue: profile?.sectionKind ?? "") ?? (hasSectionPassword ? .text : .pin6)
     }
-    var canUseBiometrics: Bool { biometricsOn && Biometrics.isAvailable && !fullLoginExpired }
 
     var lockedUntil: Date? {
         let t = defaults.double(forKey: "sec.lockUntil")
@@ -180,13 +188,35 @@ final class AppState: ObservableObject {
         if n.enableBiometrics && Biometrics.isAvailable && SecureEnclaveVault.isAvailable {
             try? SecureEnclaveVault.enroll(masterKey: mk, space: .real)
             defaults.set(true, forKey: "sec.biometric")
+        } else {
+            defaults.set(false, forKey: "sec.biometric")
         }
-        markFullLogin()
+        defaults.set(true, forKey: "backup.dirty")
         openVault(.real, key: mk, profile: prof)
     }
 
     // MARK: - Unlock
 
+    /// Step 1 of entry: Face ID. Uses the Secure Enclave key, so a matching face is proven by hardware.
+    func biometricStep() async -> Bool {
+        guard canUseBiometrics else { return false }
+        guard let ctx = await Biometrics.authenticate(reason: tr("افتح خزنتك", "Unlock your vault")) else { return false }
+        do {
+            bioKey = try SecureEnclaveVault.unlock(space: .real, context: ctx)
+            return true
+        } catch {
+            SecureEnclaveVault.remove(.real)
+            show(tr("تغيّرت بيانات \(Biometrics.name). ادخل بكلمة السر ورمز التحقق، وبنفعّلها لك من جديد.",
+                    "\(Biometrics.name) changed. Sign in with your password and 2FA code — we'll set it up again."),
+                 icon: "exclamationmark.triangle.fill", style: .warning)
+            return false
+        }
+    }
+
+    func resetBiometricStep() { bioKey = nil }
+
+    /// Step 2 of entry: the password. After Face ID it opens straight away;
+    /// without Face ID it asks for the 2FA code as the second factor.
     func unlock(password: String) async -> UnlockOutcome {
         if let until = lockedUntil { return .lockedOut(until) }
         let real = VaultStorage.loadMeta(.real)
@@ -195,8 +225,16 @@ final class AppState: ObservableObject {
         async let r = Self.unwrap(password, salt: real?.salt, wrapped: real?.wrappedByPassword, tag: "pw")
         async let d = Self.unwrap(password, salt: decoy?.salt, wrapped: decoy?.wrappedByPassword, tag: "pw")
         let (rk, dk) = await (r, d)
-        if let rk { pending = (.real, rk); return .needs2FA }
-        if let dk, decoy != nil { pending = (.decoy, dk); return .needs2FA }
+        if let rk {
+            if bioPassed { openVault(.real, key: rk); return .unlocked }
+            pending = (.real, rk)
+            return .needs2FA
+        }
+        if let dk, decoy != nil {
+            if bioPassed { openVault(.decoy, key: dk); return .unlocked }
+            pending = (.decoy, dk)
+            return .needs2FA
+        }
         registerFailure(.wrongPassword)
         if let until = lockedUntil { return .lockedOut(until) }
         return .wrong
@@ -206,7 +244,11 @@ final class AppState: ObservableObject {
         guard let p = pending,
               let prof = VaultStorage.load(Profile.self, "profile.enc", space: p.space, key: p.key) else { return false }
         if prof.totp.verify(code) {
-            if p.space == .real { markFullLogin() }
+            // Face ID was invalidated (e.g. a new face added) → quietly set it up again.
+            if p.space == .real && biometricsWanted && !SecureEnclaveVault.isEnrolled(.real)
+                && Biometrics.isAvailable && SecureEnclaveVault.isAvailable {
+                try? SecureEnclaveVault.enroll(masterKey: p.key, space: .real)
+            }
             openVault(p.space, key: p.key, profile: prof)
             return true
         }
@@ -215,26 +257,6 @@ final class AppState: ObservableObject {
     }
 
     func cancelPending() { pending = nil }
-
-    func unlockWithBiometrics() async -> Bool {
-        guard canUseBiometrics else { return false }
-        guard let ctx = await Biometrics.authenticate(reason: tr("افتح خزنتك", "Unlock your vault")) else { return false }
-        do {
-            let key = try SecureEnclaveVault.unlock(space: .real, context: ctx)
-            return openVault(.real, key: key)
-        } catch {
-            SecureEnclaveVault.remove(.real)
-            defaults.set(false, forKey: "sec.biometric")
-            show(tr("تغيّرت بيانات \(Biometrics.name). ادخل بكلمة السر وفعّلها من جديد.",
-                    "\(Biometrics.name) changed. Sign in with your password and turn it on again."),
-                 icon: "exclamationmark.triangle.fill", style: .warning)
-            return false
-        }
-    }
-
-    private func markFullLogin() {
-        defaults.set(Date().timeIntervalSince1970, forKey: "sec.lastFullLogin")
-    }
 
     private func registerFailure(_ reason: IntruderEvent.Reason) {
         let n = defaults.integer(forKey: "sec.failCount") + 1
@@ -264,7 +286,9 @@ final class AppState: ObservableObject {
         files = VaultStorage.load([VaultFile].self, "files.enc", space: s, key: key) ?? []
         reminders = RemindersStore.load(s)
         pending = nil
+        bioKey = nil
         sectionUnlocked = false
+        sectionFails = 0
         defaults.set(0, forKey: "sec.failCount")
         defaults.set(0, forKey: "sec.lockUntil")
         withAnimation(.spring(response: 0.6, dampingFraction: 0.85)) { phase = .unlocked }
@@ -274,7 +298,9 @@ final class AppState: ObservableObject {
         LiveActivityManager.sync()
         if s == .real {
             countNewIntrusions()
-            Task { await autoBackupIfNeeded() }
+            if defaults.bool(forKey: "backup.dirty") || (lastBackup.map { Date().timeIntervalSince($0) > 86400 } ?? true) {
+                scheduleBackup(delay: 1.5)
+            }
         }
         return true
     }
@@ -283,6 +309,8 @@ final class AppState: ObservableObject {
         guard masterKey != nil || pending != nil else { return }
         masterKey = nil
         pending = nil
+        bioKey = nil
+        backupTask?.cancel()
         profile = nil
         accounts = []
         notes = []
@@ -299,6 +327,7 @@ final class AppState: ObservableObject {
         switch p {
         case .active:
             privacyCover = false
+            endBackgroundTask()
             if let t = backgroundedAt, isUnlocked, Date().timeIntervalSince(t) >= Double(autoLockSeconds) {
                 lock(sound: false)
             }
@@ -310,9 +339,32 @@ final class AppState: ObservableObject {
         case .background:
             privacyCover = true
             if backgroundedAt == nil { backgroundedAt = Date() }
-            if autoLockSeconds == 0 { lock(sound: false) }
+            if !isUnlocked { bioKey = nil }
+            if autoLockSeconds == 0 { lock(sound: false); return }
+            // Stay alive just long enough to lock and wipe keys from memory after the grace period.
+            if backgroundTask == .invalid {
+                backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "saver.autolock") { [weak self] in
+                    Task { @MainActor in
+                        self?.lock(sound: false)
+                        self?.endBackgroundTask()
+                    }
+                }
+            }
+            let grace = Double(autoLockSeconds)
+            DispatchQueue.main.asyncAfter(deadline: .now() + grace) { [weak self] in
+                guard let self, let t = self.backgroundedAt, Date().timeIntervalSince(t) >= grace - 0.05 else { return }
+                self.lock(sound: false)
+                self.endBackgroundTask()
+            }
         @unknown default:
             break
+        }
+    }
+
+    private func endBackgroundTask() {
+        if backgroundTask != .invalid {
+            UIApplication.shared.endBackgroundTask(backgroundTask)
+            backgroundTask = .invalid
         }
     }
 
@@ -368,29 +420,43 @@ final class AppState: ObservableObject {
 
     // MARK: - Section password
 
-    func setSectionPassword(_ p: String) async {
+    func setSectionPassword(_ p: String, kind: PasscodeKind) async {
         guard var prof = profile else { return }
         let salt = AYNCrypto.randomBytes(16)
         let hash = await Task.detached { (try? AYNCrypto.pbkdf2(p, salt: salt, rounds: 200_000))?.rawData }.value
         prof.sectionSalt = salt
         prof.sectionHash = hash
+        prof.sectionKind = kind.rawValue
         profile = prof
         saveProfile()
         sectionUnlocked = true
     }
 
+    /// Five wrong section passcodes in a row lock the whole app.
     func checkSectionPassword(_ p: String) async -> Bool {
         guard let prof = profile, let salt = prof.sectionSalt, let hash = prof.sectionHash else { return false }
         let h = await Task.detached { (try? AYNCrypto.pbkdf2(p, salt: salt, rounds: 200_000))?.rawData }.value
         guard let h else { return false }
         let ok = AYNCrypto.constantTimeEqual(h, hash)
-        if ok { sectionUnlocked = true }
+        if ok {
+            sectionUnlocked = true
+            sectionFails = 0
+        } else {
+            sectionFails += 1
+            logScreenEvent(.wrongPassword)
+            if sectionFails >= 5 {
+                show(tr("محاولات كثيرة — قفلنا التطبيق للأمان.", "Too many attempts — the app locked for safety."),
+                     icon: "lock.fill", style: .warning)
+                lock()
+            }
+        }
         return ok
     }
 
     func saveProfile() {
         guard let mk = masterKey, let prof = profile else { return }
         try? VaultStorage.save(prof, "profile.enc", space: space, key: mk)
+        scheduleBackup()
     }
 
     // MARK: - Duress (decoy vault)
@@ -455,8 +521,10 @@ final class AppState: ObservableObject {
         meta.wrappedByRecovery = rk.wrapped
         try VaultStorage.saveMeta(meta, .real)
         SecureEnclaveVault.remove(.real)
-        defaults.set(false, forKey: "sec.biometric")
-        markFullLogin()
+        if biometricsWanted && Biometrics.isAvailable && SecureEnclaveVault.isAvailable {
+            try? SecureEnclaveVault.enroll(masterKey: key, space: .real)
+        }
+        defaults.set(true, forKey: "backup.dirty")
         openVault(.real, key: key)
     }
 
@@ -543,8 +611,10 @@ final class AppState: ObservableObject {
 
     private func persist<T: Encodable>(_ value: T, _ name: String) {
         guard let mk = masterKey else { return }
-        do { try VaultStorage.save(value, name, space: space, key: mk) }
-        catch { show(tr("تعذّر الحفظ", "Couldn't save"), icon: "xmark.octagon.fill", style: .error) }
+        do {
+            try VaultStorage.save(value, name, space: space, key: mk)
+            if name != "files.enc" { scheduleBackup() }
+        } catch { show(tr("تعذّر الحفظ", "Couldn't save"), icon: "xmark.octagon.fill", style: .error) }
     }
 
     // MARK: - Reminders
@@ -570,6 +640,7 @@ final class AppState: ObservableObject {
 
     private func saveReminders() {
         RemindersStore.save(reminders, space)
+        scheduleBackup()
         ReminderEngine.rescheduleAll()
         LiveActivityManager.sync()
     }
@@ -612,33 +683,34 @@ final class AppState: ObservableObject {
     }
 
     // MARK: - Backup
+    // Automatic cloud backup: accounts, notes, reminders and settings (not photos/videos/files),
+    // encrypted on the phone and uploaded a few seconds after every change.
 
-    /// Encrypted backup bundle. `maxFileSize` skips large files (cloud free plan); nil = include everything.
-    func makeBackup(maxFileSize: Int64?) async throws -> (data: Data, skipped: Int) {
+    /// Encrypted backup bundle. `includeFiles` adds photos/videos/files (manual full export only).
+    func makeBackup(includeFiles: Bool) async throws -> Data {
         guard let mk = masterKey, let prof = profile, let meta = VaultStorage.loadMeta(space) else { throw AppError.notUnlocked }
         var blobs: [String: Data] = [:]
         var included: [VaultFile] = []
-        var skipped = 0
-        for f in files {
-            if let max = maxFileSize, f.size > max { skipped += 1; continue }
-            if let d = try? Data(contentsOf: VaultStorage.blobURL(f.id, space: space)) {
-                blobs[f.id.uuidString] = d
-                included.append(f)
+        if includeFiles {
+            for f in files {
+                if let d = try? Data(contentsOf: VaultStorage.blobURL(f.id, space: space)) {
+                    blobs[f.id.uuidString] = d
+                    included.append(f)
+                }
             }
         }
         let payload = BackupPayload(profile: prof, accounts: accounts, notes: notes, files: included,
                                     blobs: blobs, reminders: reminders)
-        let data = try await Task.detached(priority: .userInitiated) { () -> Data in
+        return try await Task.detached(priority: .utility) { () -> Data in
             let enc = PropertyListEncoder()
             enc.outputFormat = .binary
             let plain = try enc.encode(payload)
             let sealed = try AYNCrypto.seal(plain, key: mk, aad: Data("backup".utf8))
             return try enc.encode(BackupBundle(meta: meta, payload: sealed))
         }.value
-        return (data, skipped)
     }
 
-    /// Restores a bundle using its password (or recovery key). Replaces the real vault on this phone.
+    /// Restores a bundle using its password (or recovery key). Keeps photos/files already on this phone.
     func restore(_ data: Data, secret: String) async throws {
         guard let bundle = try? PropertyListDecoder().decode(BackupBundle.self, from: data) else { throw AppError.badBackup }
         var key = await Self.unwrap(secret, salt: bundle.meta.salt, wrapped: bundle.meta.wrappedByPassword, tag: "pw")
@@ -651,46 +723,69 @@ final class AppState: ObservableObject {
               let payload = try? PropertyListDecoder().decode(BackupPayload.self, from: plain) else { throw AppError.badBackup }
 
         lock(sound: false)
-        VaultStorage.wipe(.real)
+        // Photos/files on this phone encrypted with the same vault key are kept.
+        let sameVault = VaultStorage.loadMeta(.real).map { $0.inboxPublicKey == bundle.meta.inboxPublicKey } ?? false
+        let keptFiles: [VaultFile] = sameVault ? (VaultStorage.load([VaultFile].self, "files.enc", space: .real, key: mk) ?? []) : []
+        if !sameVault { VaultStorage.wipe(.real) }
         try VaultStorage.saveMeta(bundle.meta, .real)
         try VaultStorage.save(payload.profile, "profile.enc", space: .real, key: mk)
         try VaultStorage.save(payload.accounts, "accounts.enc", space: .real, key: mk)
         try VaultStorage.save(payload.notes, "notes.enc", space: .real, key: mk)
-        try VaultStorage.save(payload.files, "files.enc", space: .real, key: mk)
+        var allFiles = keptFiles
+        for f in payload.files where !allFiles.contains(where: { $0.id == f.id }) { allFiles.append(f) }
+        try VaultStorage.save(allFiles, "files.enc", space: .real, key: mk)
         for (id, blob) in payload.blobs {
             guard let uuid = UUID(uuidString: id) else { continue }
             try blob.write(to: VaultStorage.blobURL(uuid, space: .real), options: [.atomic, .completeFileProtection])
         }
         RemindersStore.installKey(payload.profile.remindersKey, space: .real)
         RemindersStore.save(payload.reminders, .real)
-        defaults.set(false, forKey: "sec.biometric")
-        markFullLogin()
+        SecureEnclaveVault.remove(.real)
+        if biometricsWanted && Biometrics.isAvailable && SecureEnclaveVault.isAvailable {
+            try? SecureEnclaveVault.enroll(masterKey: mk, space: .real)
+        }
         openVault(.real, key: mk, profile: payload.profile)
     }
 
-    var autoBackup: Bool {
-        get { defaults.object(forKey: "backup.auto") as? Bool ?? true }
-        set { defaults.set(newValue, forKey: "backup.auto"); objectWillChange.send() }
-    }
     var lastBackup: Date? {
         let t = defaults.double(forKey: "backup.last")
         return t > 0 ? Date(timeIntervalSince1970: t) : nil
     }
 
-    func backupToCloud() async throws -> Int {
-        // In the decoy vault, pretend it worked so the real cloud backup is never overwritten.
-        if space == .decoy { try? await Task.sleep(nanoseconds: 900_000_000); return 0 }
-        let (data, skipped) = try await makeBackup(maxFileSize: 5 * 1024 * 1024)
-        try await SupabaseClient.shared.uploadBackup(data)
-        defaults.set(Date().timeIntervalSince1970, forKey: "backup.last")
-        objectWillChange.send()
-        return skipped
+    var cloudReady: Bool { SupabaseClient.shared.isConfigured && SupabaseClient.shared.session != nil }
+
+    /// Debounced automatic backup (a few seconds after the last change).
+    func scheduleBackup(delay: Double = 4) {
+        defaults.set(true, forKey: "backup.dirty")
+        guard space == .real, cloudReady else { return }
+        backupTask?.cancel()
+        backupTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard !Task.isCancelled, let self else { return }
+            await self.backupNow(silent: true)
+        }
     }
 
-    private func autoBackupIfNeeded() async {
-        guard autoBackup, space == .real, SupabaseClient.shared.isConfigured, SupabaseClient.shared.session != nil else { return }
-        if let last = lastBackup, Date().timeIntervalSince(last) < 7 * 86400 { return }
-        _ = try? await backupToCloud()
+    @discardableResult
+    func backupNow(silent: Bool = false) async -> Bool {
+        // In the decoy vault, pretend it worked so the real cloud backup is never overwritten.
+        if space == .decoy { return true }
+        guard cloudReady, isUnlocked else { return false }
+        syncing = true
+        defer { syncing = false }
+        do {
+            let data = try await makeBackup(includeFiles: false)
+            try await SupabaseClient.shared.uploadBackup(data)
+            defaults.set(Date().timeIntervalSince1970, forKey: "backup.last")
+            defaults.set(false, forKey: "backup.dirty")
+            syncError = nil
+            objectWillChange.send()
+            return true
+        } catch {
+            syncError = error.localizedDescription
+            if !silent { show(error.localizedDescription, icon: "icloud.slash", style: .error) }
+            return false
+        }
     }
 
     // MARK: - Erase
@@ -700,7 +795,7 @@ final class AppState: ObservableObject {
         VaultStorage.wipeAll()
         SupabaseClient.shared.signOut()
         UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
-        for k in ["sec.biometric", "sec.lastFullLogin", "sec.failCount", "sec.lockUntil", "backup.last", "sec.lastSeenIntrusion"] {
+        for k in ["sec.biometric", "sec.failCount", "sec.lockUntil", "backup.last", "backup.dirty", "sec.lastSeenIntrusion"] {
             defaults.removeObject(forKey: k)
         }
         WidgetBridge.update()

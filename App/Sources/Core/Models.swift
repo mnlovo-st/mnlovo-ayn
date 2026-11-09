@@ -175,6 +175,7 @@ struct Profile: Codable {
     var totp: TOTP
     var sectionSalt: Data?
     var sectionHash: Data?
+    var sectionKind: String?
     var inboxPrivateKey: Data
     var remindersKey: Data
 }
@@ -191,6 +192,26 @@ struct VaultMeta: Codable {
     var identitySalt: Data?
     var identityHash: Data?
     var inboxPublicKey: Data
+}
+
+/// Section lock type: 6-digit passcode (default), 4-digit passcode, or free text.
+enum PasscodeKind: String, CaseIterable, Identifiable {
+    case pin6, pin4, text
+    var id: String { rawValue }
+    var length: Int? {
+        switch self {
+        case .pin6: return 6
+        case .pin4: return 4
+        case .text: return nil
+        }
+    }
+    var title: String {
+        switch self {
+        case .pin6: return tr("٦ أرقام", "6 digits")
+        case .pin4: return tr("٤ أرقام", "4 digits")
+        case .text: return tr("نص", "Text")
+        }
+    }
 }
 
 struct Toast: Identifiable, Equatable {

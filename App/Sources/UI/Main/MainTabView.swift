@@ -13,7 +13,7 @@ enum MainTab: Int, CaseIterable {
     }
     var icon: String {
         switch self {
-        case .accounts: return "key.fill"
+        case .accounts: return "key.horizontal.fill"
         case .vault: return "lock.doc.fill"
         case .reminders: return "bell.fill"
         case .settings: return "gearshape.fill"
@@ -33,7 +33,7 @@ struct MainTabView: View {
             Group {
                 switch tab {
                 case .accounts:
-                    SectionGate(title: MainTab.accounts.title, icon: "key.fill") { AccountsView() }
+                    SectionGate(title: MainTab.accounts.title, icon: "key.horizontal.fill") { AccountsView() }
                 case .vault:
                     SectionGate(title: MainTab.vault.title, icon: "lock.doc.fill") { VaultView() }
                 case .reminders:
@@ -43,7 +43,8 @@ struct MainTabView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 78) }
+            .transition(.opacity)
+            .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 84) }
 
             tabBar
         }
@@ -51,30 +52,37 @@ struct MainTabView: View {
     }
 
     private var tabBar: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 2) {
             ForEach(MainTab.allCases, id: \.rawValue) { t in
+                let selected = t == tab
                 Button {
-                    guard t != tab else { return }
-                    FX.toggle()
-                    withAnimation(.spring(response: 0.38, dampingFraction: 0.8)) { tabRaw = t.rawValue }
+                    guard !selected else { return }
+                    Haptics.selection()
+                    withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) { tabRaw = t.rawValue }
                 } label: {
-                    VStack(spacing: 3) {
+                    VStack(spacing: 4) {
                         ZStack(alignment: .topTrailing) {
-                            Image(systemName: t.icon).font(.system(size: 19, weight: .semibold))
+                            Image(systemName: t.icon)
+                                .font(.system(size: 19, weight: .semibold))
+                                .symbolEffect(.bounce, value: selected)
                             if t == .settings && state.newIntrusions > 0 {
-                                Circle().fill(Theme.danger).frame(width: 9, height: 9).offset(x: 6, y: -3)
+                                Circle().fill(Theme.danger).frame(width: 9, height: 9).offset(x: 7, y: -3)
                             }
                         }
-                        Text(t.title).font(Theme.font(11, .bold))
+                        Text(t.title).font(Theme.font(11, .bold)).lineLimit(1).minimumScaleFactor(0.8)
                     }
-                    .foregroundStyle(t == tab ? Theme.bg : Theme.sub)
+                    .foregroundStyle(selected ? Theme.text : Theme.faint)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 54)
+                    .frame(height: 58)
                     .background {
-                        if t == tab {
-                            Capsule().fill(Theme.gradient)
+                        if selected {
+                            Capsule()
+                                .fill(LinearGradient(colors: [Theme.accent.opacity(0.28), Theme.accent2.opacity(0.28)],
+                                                     startPoint: .topLeading, endPoint: .bottomTrailing))
+                                .overlay(Capsule().strokeBorder(LinearGradient(colors: [Theme.accent.opacity(0.7), Theme.accent2.opacity(0.5)],
+                                                                               startPoint: .top, endPoint: .bottom), lineWidth: 1))
                                 .matchedGeometryEffect(id: "tab", in: ns)
-                                .shadow(color: Theme.accent.opacity(0.45), radius: 12)
+                                .shadow(color: Theme.accent.opacity(0.35), radius: 14)
                         }
                     }
                 }
@@ -83,14 +91,16 @@ struct MainTabView: View {
         }
         .padding(6)
         .background(Capsule().fill(.ultraThinMaterial))
-        .overlay(Capsule().strokeBorder(Theme.stroke))
-        .shadow(color: .black.opacity(0.45), radius: 24, y: 10)
-        .padding(.horizontal, 16)
-        .padding(.bottom, 6)
+        .background(Capsule().fill(Theme.bg.opacity(0.6)))
+        .overlay(Capsule().strokeBorder(LinearGradient(colors: [Color.white.opacity(0.16), Color.white.opacity(0.03)],
+                                                       startPoint: .top, endPoint: .bottom)))
+        .shadow(color: .black.opacity(0.5), radius: 26, y: 10)
+        .padding(.horizontal, 14)
+        .padding(.bottom, 4)
     }
 }
 
-/// Header used at the top of each tab.
+/// Header at the top of each tab: big title, subtitle, cloud status and a lock button.
 struct TabHeader<Trailing: View>: View {
     var title: String
     var subtitle: String
@@ -99,10 +109,18 @@ struct TabHeader<Trailing: View>: View {
     @EnvironmentObject var state: AppState
 
     var body: some View {
-        HStack(alignment: .center) {
-            VStack(alignment: .leading, spacing: 2) {
+        HStack(alignment: .center, spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(title).font(Theme.font(32, .heavy)).foregroundStyle(Theme.text)
-                Text(subtitle).font(Theme.font(14, .medium)).foregroundStyle(Theme.sub)
+                HStack(spacing: 6) {
+                    if state.cloudReady && !state.isDecoy {
+                        Image(systemName: state.syncing ? "arrow.triangle.2.circlepath.icloud" : (state.syncError == nil ? "checkmark.icloud" : "exclamationmark.icloud"))
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(state.syncError == nil ? Theme.accent : Theme.warn)
+                            .symbolEffect(.pulse, isActive: state.syncing)
+                    }
+                    Text(subtitle).font(Theme.font(14, .medium)).foregroundStyle(Theme.sub)
+                }
             }
             Spacer()
             trailing()
@@ -113,7 +131,7 @@ struct TabHeader<Trailing: View>: View {
     }
 }
 
-// MARK: - Section password gate
+// MARK: - Section passcode gate
 
 struct SectionGate<Content: View>: View {
     @EnvironmentObject var state: AppState
@@ -121,104 +139,84 @@ struct SectionGate<Content: View>: View {
     var icon: String
     @ViewBuilder var content: () -> Content
 
-    @State private var password = ""
-    @State private var confirm = ""
-    @State private var error: String?
-    @State private var loading = false
+    @State private var code = ""
+    @State private var shakes = 0
     @State private var mood: EyeMood = .idle
+    @State private var checking = false
     @FocusState private var focus: AYNFieldID?
 
-    private var creating: Bool { !state.hasSectionPassword }
     private var useBio: Bool { UserDefaults.standard.bool(forKey: "sec.sectionBiometric") && Biometrics.isAvailable }
 
     var body: some View {
         if state.sectionUnlocked {
             content()
+        } else if !state.hasSectionPassword {
+            ScrollView {
+                PasscodeSetupFlow { code, kind in
+                    Task {
+                        await state.setSectionPassword(code, kind: kind)
+                        SoundFX.shared.play(.unlock, volume: 0.45)
+                        state.show(tr("تم إنشاء رمز الأقسام ✓", "Section passcode created ✓"), icon: "lock.fill")
+                    }
+                }
+                .padding(.horizontal, 24)
+                .padding(.top, 30)
+            }
+            .scrollDismissesKeyboard(.interactively)
         } else {
             ScrollView {
-                VStack(spacing: 16) {
-                    Spacer(minLength: 30)
-                    EyeView(mood: currentMood, size: 140, sounds: true)
-                    Text(creating ? tr("أنشئ كلمة سر للأقسام", "Create a section password") : title)
-                        .font(Theme.font(26, .heavy)).foregroundStyle(Theme.text)
-                    Text(creating
-                         ? tr("تحمي «الحسابات» و«الخزنة». خلّها مختلفة عن كلمة سر الدخول.", "Protects Accounts and Vault. Make it different from your main password.")
-                         : tr("اكتب كلمة سر الأقسام", "Enter your section password"))
-                        .font(Theme.font(15)).foregroundStyle(Theme.sub).multilineTextAlignment(.center)
-
-                    AYNField(title: tr("كلمة سر الأقسام", "Section password"), icon: icon, text: $password, secure: true,
-                             focus: $focus, id: .section) {
-                        if creating { focus = .sectionConfirm } else { Task { await submit() } }
-                    }
-                    if creating {
-                        AYNField(title: tr("أكّدها", "Confirm it"), icon: "checkmark.shield.fill", text: $confirm, secure: true,
-                                 focus: $focus, id: .sectionConfirm)
-                    }
-                    if let error {
-                        Text(error).font(Theme.font(14, .semibold)).foregroundStyle(Theme.danger)
-                    }
-                    PrimaryButton(title: creating ? tr("حفظ وفتح", "Save & open") : tr("فتح", "Open"),
-                                  icon: "lock.open.fill", loading: loading, enabled: canSubmit) { Task { await submit() } }
-                    if !creating && useBio {
-                        SecondaryButton(title: Biometrics.name, icon: Biometrics.icon) { Task { await bio() } }
-                    }
+                VStack(spacing: 14) {
+                    EyeView(mood: currentMood, size: 120, sounds: true)
+                        .padding(.top, 26)
+                    Label(title, systemImage: icon)
+                        .font(Theme.font(24, .heavy)).foregroundStyle(Theme.text)
+                    Text(tr("اكتب رمز الأقسام", "Enter your section passcode"))
+                        .font(Theme.font(14)).foregroundStyle(Theme.sub)
+                    PasscodeEntry(kind: state.sectionKind, code: $code, shakes: shakes,
+                                  biometricIcon: useBio ? Biometrics.icon : nil,
+                                  onBiometric: { Task { await bio() } },
+                                  focus: $focus) { entered in Task { await submit(entered) } }
+                        .padding(.top, 6)
                 }
                 .padding(.horizontal, 24)
             }
             .scrollDismissesKeyboard(.interactively)
-            .onChange(of: password) { _, _ in FX.key() }
-            .onChange(of: confirm) { _, _ in FX.key() }
-            .onAppear { if !creating && useBio { Task { await bio() } } }
+            .onAppear { if useBio { Task { await bio() } } }
         }
     }
 
     private var currentMood: EyeMood {
         if mood == .angry || mood == .happy { return mood }
-        if creating {
-            return PasswordCreator.mood(password: password, confirm: confirm, focused: focus, first: .section, second: .sectionConfirm)
-        }
-        return focus == .section ? .lookUp : .idle
-    }
-
-    private var canSubmit: Bool {
-        creating ? (password.count >= 4 && password == confirm) : !password.isEmpty
+        if checking { return .thinking }
+        return code.isEmpty ? .idle : .lookUp
     }
 
     private func bio() async {
         if await Biometrics.authenticate(reason: tr("افتح القسم", "Open section")) != nil {
+            withAnimation { mood = .happy }
+            await pause(0.3)
             state.sectionUnlocked = true
-            SoundFX.shared.play(.unlock, volume: 0.5)
         }
     }
 
-    private func submit() async {
-        guard canSubmit, !loading else { return }
-        loading = true
-        defer { loading = false }
-        if creating {
-            if await state.verifyMainPassword(password) {
-                error = tr("خلّها مختلفة عن كلمة سر الدخول.", "Use something different from your main password.")
-                FX.error()
-                return
-            }
-            await state.setSectionPassword(password)
+    private func submit(_ entered: String) async {
+        guard !checking else { return }
+        checking = true
+        let ok = await state.checkSectionPassword(entered)
+        checking = false
+        if ok {
             withAnimation { mood = .happy }
-            SoundFX.shared.play(.unlock, volume: 0.6)
-        } else if await state.checkSectionPassword(password) {
-            withAnimation { mood = .happy }
-            SoundFX.shared.play(.unlock, volume: 0.6)
         } else {
             withAnimation { mood = .angry }
-            error = tr("غلط.", "Wrong.")
-            password = ""
-            state.logScreenEvent(.wrongPassword)
-            await pause(1)
+            shakes += 1
+            code = ""
+            await pause(0.9)
             withAnimation { mood = .idle }
         }
     }
 }
 
-// MARK: - Extra gate for 🔴 top-secret items: biometrics + section password every time
+// MARK: - Extra gate for 🔴 top-secret items: Face ID + section passcode every time
 
 struct SecretUnlockSheet: View {
     @EnvironmentObject var state: AppState
@@ -226,57 +224,65 @@ struct SecretUnlockSheet: View {
     var onUnlock: () -> Void
 
     @State private var bioOK = false
-    @State private var password = ""
+    @State private var code = ""
+    @State private var shakes = 0
     @State private var error: String?
-    @State private var mood: EyeMood = .thinking
+    @State private var mood: EyeMood = .scanning
     @FocusState private var focus: AYNFieldID?
 
     var body: some View {
         ZStack {
             AuroraBackground()
-            VStack(spacing: 16) {
-                SheetHeader(title: tr("محتوى سري جداً", "Top secret")) { dismiss() }
-                EyeView(mood: mood, size: 120, sounds: true)
-                Label(bioOK || !Biometrics.isAvailable ? tr("تم التحقق بالوجه ✓", "Face verified ✓") : tr("نتحقق من وجهك…", "Checking your face…"),
-                      systemImage: Biometrics.icon)
-                    .font(Theme.font(15, .semibold))
-                    .foregroundStyle(bioOK ? Theme.ok : Theme.sub)
-                AYNField(title: tr("كلمة سر الأقسام", "Section password"), icon: "lock.fill", text: $password,
-                         secure: true, focus: $focus, id: .section) { Task { await submit() } }
-                    .disabled(!bioOK)
-                    .opacity(bioOK ? 1 : 0.4)
-                if let error { Text(error).font(Theme.font(14, .semibold)).foregroundStyle(Theme.danger) }
-                PrimaryButton(title: tr("افتح", "Open"), icon: "lock.open.fill", enabled: bioOK && !password.isEmpty) {
-                    Task { await submit() }
+            ScrollView {
+                VStack(spacing: 14) {
+                    SheetHeader(title: tr("محتوى سري جداً", "Top secret")) { dismiss() }
+                    EyeView(mood: mood, size: 110, sounds: true)
+                    Label(bioOK ? tr("تم التحقق ✓", "Verified ✓") : tr("نتحقق من وجهك…", "Checking your face…"),
+                          systemImage: Biometrics.icon)
+                        .font(Theme.font(15, .semibold))
+                        .foregroundStyle(bioOK ? Theme.ok : Theme.sub)
+                    if let error { Text(error).font(Theme.font(14, .semibold)).foregroundStyle(Theme.danger) }
+                    if bioOK {
+                        PasscodeEntry(kind: state.sectionKind, code: $code, shakes: shakes, focus: $focus) { entered in
+                            Task { await submit(entered) }
+                        }
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    } else {
+                        SecondaryButton(title: tr("حاول مرة ثانية", "Try again"), icon: Biometrics.icon) { Task { await bio() } }
+                    }
                 }
-                Spacer()
+                .padding(20)
             }
-            .padding(20)
         }
-        .presentationDetents([.medium, .large])
-        .task {
-            if !Biometrics.isAvailable { bioOK = true; mood = .idle; return }
-            await pause(0.3)
-            if await Biometrics.authenticate(reason: tr("فتح محتوى سري", "Open secret item")) != nil {
-                withAnimation { bioOK = true; mood = .lookUp }
-                focus = .section
-            } else {
-                withAnimation { mood = .angry }
-                error = tr("فشل التحقق بالوجه.", "Face check failed.")
-            }
+        .presentationDetents([.large])
+        .task { await bio() }
+    }
+
+    private func bio() async {
+        if !Biometrics.isAvailable { withAnimation { bioOK = true; mood = .idle }; return }
+        withAnimation { mood = .scanning }
+        await pause(0.25)
+        if await Biometrics.authenticate(reason: tr("فتح محتوى سري", "Open secret item")) != nil {
+            withAnimation(.spring) { bioOK = true; mood = .lookUp; error = nil }
+        } else {
+            withAnimation { mood = .angry }
+            error = tr("فشل التحقق بالوجه.", "Face check failed.")
         }
     }
 
-    private func submit() async {
-        if await state.checkSectionPassword(password) {
+    private func submit(_ entered: String) async {
+        if await state.checkSectionPassword(entered) {
             withAnimation { mood = .happy }
             await pause(0.35)
             dismiss()
             onUnlock()
         } else {
             withAnimation { mood = .angry }
-            error = tr("كلمة السر غلط.", "Wrong password.")
-            password = ""
+            shakes += 1
+            code = ""
+            error = tr("الرمز غلط.", "Wrong passcode.")
+            await pause(0.8)
+            withAnimation { mood = .lookUp }
         }
     }
 }

@@ -204,7 +204,7 @@ struct RestoreView: View {
             AuroraBackground()
             ScrollView {
                 VStack(spacing: 16) {
-                    SheetHeader(title: tr("استعادة نسخة", "Restore backup")) { dismiss() }
+                    SheetHeader(title: tr("تسجيل الدخول", "Sign in")) { dismiss() }
                     if backup == nil { chooser } else { unlockBackup }
                     if let error {
                         Text(error).font(Theme.font(14, .semibold)).foregroundStyle(Theme.danger).multilineTextAlignment(.center)
@@ -228,8 +228,8 @@ struct RestoreView: View {
     private var chooser: some View {
         VStack(spacing: 14) {
             Picker("", selection: $source) {
-                Text(tr("من السحابة", "From cloud")).tag(0)
-                Text(tr("من ملف", "From file")).tag(1)
+                Text(tr("بإيميلي (السحابة)", "With my email (cloud)")).tag(0)
+                Text(tr("من ملف نسخة", "From a backup file")).tag(1)
             }
             .pickerStyle(.segmented)
 
@@ -246,11 +246,11 @@ struct RestoreView: View {
                 } else {
                     Text(tr("اكتب الكود اللي وصلك:", "Enter the code you received:")).font(Theme.font(15, .semibold))
                     CodeField(code: $code, length: 8)
-                    PrimaryButton(title: tr("نزّل النسخة", "Download backup"), icon: "icloud.and.arrow.down.fill",
+                    PrimaryButton(title: tr("تحقق ونزّل بياناتي", "Verify & get my data"), icon: "icloud.and.arrow.down.fill",
                                   loading: loading, enabled: code.count >= 6) { Task { await download() } }
                 }
             } else {
-                PrimaryButton(title: tr("اختر ملف النسخة (.ayn)", "Choose backup file (.ayn)"), icon: "folder.fill") { importing = true }
+                PrimaryButton(title: tr("اختر ملف النسخة (.saver)", "Choose backup file (.saver)"), icon: "folder.fill") { importing = true }
             }
         }
     }
@@ -258,17 +258,17 @@ struct RestoreView: View {
     private var unlockBackup: some View {
         VStack(spacing: 14) {
             EyeView(mood: focus == .password ? .lookUp : .idle, size: 120, sounds: true)
-            Text(tr("لقينا النسخة ✓ اكتب كلمة السر اللي كانت عليها (أو مفتاح الاسترجاع).",
-                    "Backup found ✓ Enter the password it used (or the recovery key)."))
+            Text(tr("لقينا بياناتك ✓ اكتب كلمة السر (أو مفتاح الاسترجاع).",
+                    "Found your data ✓ Enter your password (or recovery key)."))
                 .font(Theme.font(15, .semibold)).foregroundStyle(Theme.text).multilineTextAlignment(.center)
             AYNField(title: tr("كلمة السر أو مفتاح الاسترجاع", "Password or recovery key"), icon: "key.fill",
                      text: $secret, secure: true, focus: $focus, id: .password)
             if state.hasAccount {
-                Label(tr("تنبيه: الاستعادة تستبدل الخزنة الموجودة على هذا الجوال.", "Warning: restoring replaces the vault on this phone."),
+                Label(tr("تنبيه: هذا يستبدل البيانات الموجودة على هذا الجوال.", "Note: this replaces the data on this phone."),
                       systemImage: "exclamationmark.triangle.fill")
                     .font(Theme.font(13, .semibold)).foregroundStyle(Theme.warn)
             }
-            PrimaryButton(title: tr("استعادة", "Restore"), icon: "arrow.counterclockwise", loading: loading, enabled: !secret.isEmpty) {
+            PrimaryButton(title: tr("دخول", "Sign in"), icon: "lock.open.fill", loading: loading, enabled: !secret.isEmpty) {
                 Task { await restore() }
             }
         }
@@ -302,7 +302,7 @@ struct RestoreView: View {
         do {
             try await state.restore(backup, secret: secret)
             state.busy = nil
-            state.show(tr("رجعت بياناتك ✓", "Your data is back ✓"))
+            state.show(tr("أهلاً من جديد ✓ رجعت بياناتك", "Welcome back ✓ your data is restored"))
             dismiss()
         } catch {
             state.busy = nil

@@ -446,7 +446,7 @@ struct NoteEditor: View {
         guard !note.title.isEmpty || !note.body.isEmpty else { return }
         if note.title.isEmpty { note.title = String(note.body.prefix(30)) }
         state.upsert(note)
-        FX.success()
+        Haptics.success()
     }
 }
 

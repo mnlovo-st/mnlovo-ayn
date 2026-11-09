@@ -220,8 +220,8 @@ struct SignUpFlow: View {
         VStack(spacing: 16) {
             StepHeader(icon: "lock.rotation",
                        title: tr("التحقق بخطوتين (2FA)", "Two-factor (2FA)"),
-                       subtitle: tr("أضف AYN لتطبيق «كلمات السر» في الآيفون، وكل ٣٠ ثانية يطلع لك رمز جديد مثل مايكروسوفت.",
-                                    "Add AYN to the iPhone Passwords app — it will show a new code every 30 seconds, like Microsoft."))
+                       subtitle: tr("أضف MNLOVO SAVER لتطبيق «كلمات السر» في الآيفون، وكل ٣٠ ثانية يطلع لك رمز جديد مثل مايكروسوفت.",
+                                    "Add MNLOVO SAVER to the iPhone Passwords app — it will show a new code every 30 seconds, like Microsoft."))
             TwoFactorSetupCard(totp: input.totp)
             Text(tr("اكتب الرمز اللي يطلع لك:", "Enter the code it shows:"))
                 .font(Theme.font(15, .semibold)).foregroundStyle(Theme.text)
@@ -249,8 +249,8 @@ struct SignUpFlow: View {
             StepHeader(icon: "checkmark.shield.fill",
                        title: tr("آخر خطوة", "Last step"),
                        subtitle: tr("فعّل اللي تبيه. تقدر تغيّرها بعدين.", "Turn on what you like. You can change these later."))
-            toggleRow(icon: Biometrics.icon, title: tr("الدخول بـ \(Biometrics.name)", "Unlock with \(Biometrics.name)"),
-                      sub: tr("المفتاح محفوظ داخل شريحة Secure Enclave", "Key stays inside the Secure Enclave chip"),
+            toggleRow(icon: Biometrics.icon, title: tr("\(Biometrics.name) + كلمة السر عند الدخول", "\(Biometrics.name) + password to enter"),
+                      sub: tr("أقوى حماية. بدونه: كلمة السر + رمز التحقق", "Strongest. Without it: password + 2FA code"),
                       isOn: $input.enableBiometrics)
                 .disabled(!Biometrics.isAvailable)
             toggleRow(icon: "bell.badge.fill", title: tr("الإشعارات", "Notifications"),

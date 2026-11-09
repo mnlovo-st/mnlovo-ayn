@@ -5,51 +5,62 @@ struct IntroView: View {
 
     @State private var mood: EyeMood = .closed
     @State private var letters = 0
-    @State private var showSub = false
+    @State private var showSaver = false
+    @State private var showFooter = false
     @State private var ring = false
     @State private var ring2 = false
+    @State private var lineWidth: CGFloat = 0
     @State private var finished = false
     private let word = Array("MNLOVO")
 
     var body: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: 22) {
             Spacer()
             ZStack {
-                Circle().stroke(Theme.gradient, lineWidth: 2)
-                    .frame(width: 240, height: 240)
-                    .scaleEffect(ring ? 1.5 : 0.5)
+                Circle().stroke(Theme.brandGradient, lineWidth: 1.5)
+                    .frame(width: 230, height: 230)
+                    .scaleEffect(ring ? 1.6 : 0.45)
                     .opacity(ring ? 0 : 0.9)
-                Circle().stroke(Theme.accent.opacity(0.6), lineWidth: 1)
-                    .frame(width: 240, height: 240)
-                    .scaleEffect(ring2 ? 1.9 : 0.5)
-                    .opacity(ring2 ? 0 : 0.7)
-                EyeView(mood: mood, size: 180)
+                Circle().stroke(Theme.accent.opacity(0.5), lineWidth: 1)
+                    .frame(width: 230, height: 230)
+                    .scaleEffect(ring2 ? 2.0 : 0.45)
+                    .opacity(ring2 ? 0 : 0.6)
+                EyeView(mood: mood, size: 190)
             }
-            .frame(height: 220)
+            .frame(height: 210)
 
-            HStack(spacing: 8) {
-                ForEach(0..<word.count, id: \.self) { i in
-                    Text(String(word[i]))
-                        .font(Theme.font(38, .heavy))
-                        .foregroundStyle(Theme.gradient)
-                        .opacity(i < letters ? 1 : 0)
-                        .offset(y: i < letters ? 0 : 16)
-                        .blur(radius: i < letters ? 0 : 8)
+            VStack(spacing: 10) {
+                HStack(spacing: 6) {
+                    ForEach(0..<word.count, id: \.self) { i in
+                        Text(String(word[i]))
+                            .font(Theme.font(40, .black))
+                            .foregroundStyle(Theme.brandGradient)
+                            .opacity(i < letters ? 1 : 0)
+                            .offset(y: i < letters ? 0 : 18)
+                            .blur(radius: i < letters ? 0 : 10)
+                            .scaleEffect(i < letters ? 1 : 0.85)
+                    }
                 }
+                Capsule()
+                    .fill(Theme.brandGradient)
+                    .frame(width: lineWidth, height: 2)
+                    .shadow(color: Theme.accent.opacity(0.8), radius: 6)
+                Text("S A V E R")
+                    .font(Theme.font(18, .semibold))
+                    .tracking(6)
+                    .foregroundStyle(Theme.text.opacity(0.85))
+                    .opacity(showSaver ? 1 : 0)
+                    .offset(y: showSaver ? 0 : 8)
             }
             .environment(\.layoutDirection, .leftToRight)
 
-            Text("AYN  ·  عين")
-                .font(Theme.font(17, .semibold))
-                .tracking(5)
-                .foregroundStyle(Theme.sub)
-                .opacity(showSub ? 1 : 0)
-                .offset(y: showSub ? 0 : 8)
             Spacer()
-            Text(tr("اضغط للتخطي", "Tap to skip"))
-                .font(Theme.font(12))
-                .foregroundStyle(Theme.faint)
-                .padding(.bottom, 20)
+            VStack(spacing: 6) {
+                Text(tr("اضغط للتخطي", "Tap to skip")).font(Theme.font(12)).foregroundStyle(Theme.faint)
+                Text(Brand.copyright).font(Theme.font(11, .bold)).foregroundStyle(Theme.faint)
+            }
+            .opacity(showFooter ? 1 : 0)
+            .padding(.bottom, 18)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentShape(Rectangle())
@@ -58,22 +69,26 @@ struct IntroView: View {
     }
 
     private func run() async {
-        SoundFX.shared.play(.intro, volume: 0.85)
-        await pause(0.55)
-        withAnimation(.spring(response: 0.7, dampingFraction: 0.6)) { mood = .idle }
+        SoundFX.shared.play(.intro, volume: 0.75)
+        withAnimation(.easeIn(duration: 0.6)) { showFooter = true }
+        await pause(0.5)
+        withAnimation(.spring(response: 0.75, dampingFraction: 0.62)) { mood = .surprised }
         Haptics.tap(.heavy)
-        withAnimation(.easeOut(duration: 1.3)) { ring = true }
-        withAnimation(.easeOut(duration: 1.8).delay(0.15)) { ring2 = true }
-        await pause(0.35)
+        withAnimation(.easeOut(duration: 1.4)) { ring = true }
+        withAnimation(.easeOut(duration: 1.9).delay(0.15)) { ring2 = true }
+        await pause(0.3)
+        withAnimation(.spring(response: 0.5)) { mood = .idle }
         for i in 1...word.count {
-            withAnimation(.spring(response: 0.45, dampingFraction: 0.7)) { letters = i }
-            Haptics.soft(0.3)
-            await pause(0.08)
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.72)) { letters = i }
+            Haptics.soft(0.25)
+            await pause(0.085)
         }
-        withAnimation(.easeOut(duration: 0.5)) { showSub = true }
-        await pause(0.35)
+        withAnimation(.easeOut(duration: 0.55)) { lineWidth = 150 }
+        await pause(0.2)
+        withAnimation(.spring(response: 0.6)) { showSaver = true }
+        await pause(0.4)
         withAnimation { mood = .happy }
-        await pause(0.9)
+        await pause(0.95)
         finish()
     }
 
@@ -103,28 +118,29 @@ struct WelcomeView: View {
             Spacer()
             EyeView(mood: mood, size: 170, sounds: false)
                 .onTapGesture {
-                    FX.tap()
+                    Haptics.tap()
                     withAnimation { mood = mood == .happy ? .idle : .happy }
                 }
             VStack(spacing: 8) {
-                Text("MNLOVO AYN")
-                    .font(Theme.font(36, .heavy))
-                    .foregroundStyle(Theme.gradient)
+                Text(Brand.appName)
+                    .font(Theme.font(36, .black))
+                    .foregroundStyle(Theme.brandGradient)
                 Text(tr("خزنتك الذكية. كل شي مشفّر على جوالك.", "Your smart vault. Everything encrypted on your iPhone."))
                     .font(Theme.font(16, .medium))
                     .foregroundStyle(Theme.sub)
                     .multilineTextAlignment(.center)
             }
-            .padding(.top, 8)
+            .padding(.top, 10)
 
             VStack(alignment: .leading, spacing: 14) {
-                feature("key.fill", tr("حساباتك وكلمات السر ورموز التحقق", "Accounts, passwords & 2FA codes"))
+                feature("key.horizontal.fill", tr("حساباتك وكلمات السر ورموز التحقق", "Accounts, passwords & 2FA codes"))
                 feature("lock.doc.fill", tr("صور وفيديو وملفات حساسة مشفّرة", "Encrypted photos, videos & files"))
                 feature("bell.badge.fill", tr("تذكيرات ذكية ما تخليك تنسى", "Smart reminders that won't let you forget"))
+                feature("icloud.fill", tr("نسخ احتياطي تلقائي ومشفّر", "Automatic encrypted backup"))
             }
             .glass(18)
             .padding(.horizontal, 24)
-            .padding(.top, 28)
+            .padding(.top, 26)
             .opacity(appear ? 1 : 0)
             .offset(y: appear ? 0 : 20)
 
@@ -132,19 +148,20 @@ struct WelcomeView: View {
 
             VStack(spacing: 12) {
                 PrimaryButton(title: tr("إنشاء حساب", "Create account"), icon: "sparkles") { showSignUp = true }
-                SecondaryButton(title: tr("استعادة من نسخة احتياطية", "Restore from backup"), icon: "arrow.clockwise.icloud") {
+                SecondaryButton(title: tr("عندي حساب — تسجيل دخول", "I have an account — sign in"), icon: "person.crop.circle.badge.checkmark") {
                     showRestore = true
                 }
+                Text(Brand.copyright).font(Theme.font(11, .bold)).foregroundStyle(Theme.faint).padding(.top, 4)
             }
             .padding(.horizontal, 24)
-            .padding(.bottom, 18)
+            .padding(.bottom, 12)
         }
         .onAppear { withAnimation(.spring(response: 0.7).delay(0.2)) { appear = true } }
         .task {
             while !Task.isCancelled {
-                await pause(3.5)
+                await pause(4.0)
                 withAnimation { mood = .thinking }
-                await pause(1.6)
+                await pause(1.4)
                 withAnimation { mood = .idle }
             }
         }
@@ -155,10 +172,10 @@ struct WelcomeView: View {
     private func feature(_ icon: String, _ text: String) -> some View {
         HStack(spacing: 12) {
             Image(systemName: icon)
-                .font(.system(size: 16, weight: .bold))
+                .font(.system(size: 15, weight: .bold))
                 .foregroundStyle(Theme.accent)
                 .frame(width: 34, height: 34)
-                .background(Circle().fill(Theme.accent.opacity(0.12)))
+                .background(RoundedRectangle(cornerRadius: 10).fill(Theme.accent.opacity(0.12)))
             Text(text).font(Theme.font(15, .semibold)).foregroundStyle(Theme.text)
             Spacer(minLength: 0)
         }

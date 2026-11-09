@@ -5,9 +5,9 @@ import ActivityKit
 
 /// Data shared between the app and the widget extension (App Group).
 enum WidgetShared {
-    static let appGroup = "group.com.mnlovo.ayn"
+    static let appGroup = "group.com.mnlovo.saver"
     static let key = "widget.payload"
-    static let kind = "AYNNextTasks"
+    static let kind = "SaverNextTasks"
 
     struct Item: Codable, Hashable, Identifiable {
         var id: String

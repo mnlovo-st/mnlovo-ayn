@@ -17,9 +17,9 @@ final class SupabaseClient {
         case notConfigured, server(String), noSession, notFound
         var errorDescription: String? {
             switch self {
-            case .notConfigured: return tr("Supabase غير مُعد. روح الإعدادات ← السحابة.", "Supabase isn't set up. Go to Settings → Cloud.")
+            case .notConfigured: return tr("السحابة غير مُعدّة بعد.", "The cloud isn't set up yet.")
             case .server(let m): return m
-            case .noSession: return tr("لازم تتحقق من إيميلك أولاً.", "Verify your email first.")
+            case .noSession: return tr("اربط السحابة بكود الإيميل أولاً.", "Connect the cloud with an email code first.")
             case .notFound: return tr("ما لقيت نسخة احتياطية في السحابة.", "No cloud backup found.")
             }
         }
@@ -28,11 +28,17 @@ final class SupabaseClient {
     private let urlKey = "sb.url", anonKey = "sb.anon", sessionAccount = "sb.session"
 
     var baseURL: String {
-        get { UserDefaults.standard.string(forKey: urlKey) ?? "" }
+        get {
+            let custom = UserDefaults.standard.string(forKey: urlKey) ?? ""
+            return custom.isEmpty ? SupabaseConfig.url : custom
+        }
         set { UserDefaults.standard.set(newValue.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/")), forKey: urlKey) }
     }
     var anon: String {
-        get { UserDefaults.standard.string(forKey: anonKey) ?? "" }
+        get {
+            let custom = UserDefaults.standard.string(forKey: anonKey) ?? ""
+            return custom.isEmpty ? SupabaseConfig.publishableKey : custom
+        }
         set { UserDefaults.standard.set(newValue.trimmingCharacters(in: .whitespacesAndNewlines), forKey: anonKey) }
     }
     var isConfigured: Bool { baseURL.hasPrefix("https://") && anon.count > 20 }
@@ -138,14 +144,14 @@ final class SupabaseClient {
 
     func uploadBackup(_ data: Data) async throws {
         let s = try await validSession()
-        let (resp, http) = try await request("/storage/v1/object/backups/\(s.userID)/vault.ayn", body: data, bearer: s.accessToken,
+        let (resp, http) = try await request("/storage/v1/object/backups/\(s.userID)/vault.saver", body: data, bearer: s.accessToken,
                                              headers: ["Content-Type": "application/octet-stream", "x-upsert": "true"])
         guard (200..<300).contains(http.statusCode) else { throw SBError.server(message(from: resp, status: http.statusCode)) }
     }
 
     func downloadBackup() async throws -> Data {
         let s = try await validSession()
-        let (data, http) = try await request("/storage/v1/object/authenticated/backups/\(s.userID)/vault.ayn",
+        let (data, http) = try await request("/storage/v1/object/authenticated/backups/\(s.userID)/vault.saver",
                                              method: "GET", bearer: s.accessToken)
         if http.statusCode == 404 || http.statusCode == 400 { throw SBError.notFound }
         guard (200..<300).contains(http.statusCode) else { throw SBError.server(message(from: data, status: http.statusCode)) }

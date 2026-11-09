@@ -32,7 +32,7 @@ targets:
       - path: Shared
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.mnlovo.ayn
+        PRODUCT_BUNDLE_IDENTIFIER: com.mnlovo.saver
         PRODUCT_NAME: AYN
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
@@ -42,8 +42,8 @@ targets:
       path: App/Info.plist
       properties:
         CFBundleDevelopmentRegion: ar
-        CFBundleDisplayName: AYN
-        CFBundleName: AYN
+        CFBundleDisplayName: MNLOVO SAVER
+        CFBundleName: MNLOVO SAVER
         CFBundleExecutable: $(EXECUTABLE_NAME)
         CFBundleIdentifier: $(PRODUCT_BUNDLE_IDENTIFIER)
         CFBundleInfoDictionaryVersion: "6.0"
@@ -59,17 +59,18 @@ targets:
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         UIRequiredDeviceCapabilities: [arm64]
         NSSupportsLiveActivities: true
+        NSHumanReadableCopyright: "© MNLOVO 2026"
         ITSAppUsesNonExemptEncryption: false
-        NSFaceIDUsageDescription: "AYN uses Face ID to unlock your encrypted vault. | يستخدم AYN بصمة الوجه لفتح خزنتك المشفّرة."
-        NSCameraUsageDescription: "AYN uses the camera to scan 2FA QR codes, scan documents, and (if you enable it) photograph intruders. | يستخدم AYN الكاميرا لمسح رموز التحقق والمستندات وتصوير المتطفلين إذا فعّلت الميزة."
-        NSPhotoLibraryUsageDescription: "AYN can delete the original photo after moving it into your encrypted vault. | يقدر AYN يحذف الصورة الأصلية بعد نقلها للخزنة المشفّرة."
-        NSPhotoLibraryAddUsageDescription: "AYN can save a decrypted photo back to your library when you ask. | يقدر AYN يرجّع الصورة للاستوديو إذا طلبت."
-        NSCalendarsWriteOnlyAccessUsageDescription: "AYN adds your reminders to the calendar when you ask. | يضيف AYN تذكيراتك للتقويم إذا طلبت."
-        NSCalendarsUsageDescription: "AYN adds your reminders to the calendar when you ask. | يضيف AYN تذكيراتك للتقويم إذا طلبت."
+        NSFaceIDUsageDescription: "MNLOVO SAVER uses Face ID to unlock your encrypted vault. | يستخدم MNLOVO SAVER بصمة الوجه لفتح خزنتك المشفّرة."
+        NSCameraUsageDescription: "MNLOVO SAVER uses the camera to scan 2FA QR codes, scan documents, and (if you enable it) photograph intruders. | يستخدم MNLOVO SAVER الكاميرا لمسح رموز التحقق والمستندات وتصوير المتطفلين إذا فعّلت الميزة."
+        NSPhotoLibraryUsageDescription: "MNLOVO SAVER can delete the original photo after moving it into your encrypted vault. | يقدر MNLOVO SAVER يحذف الصورة الأصلية بعد نقلها للخزنة المشفّرة."
+        NSPhotoLibraryAddUsageDescription: "MNLOVO SAVER can save a decrypted photo back to your library when you ask. | يقدر MNLOVO SAVER يرجّع الصورة للاستوديو إذا طلبت."
+        NSCalendarsWriteOnlyAccessUsageDescription: "MNLOVO SAVER adds your reminders to the calendar when you ask. | يضيف MNLOVO SAVER تذكيراتك للتقويم إذا طلبت."
+        NSCalendarsUsageDescription: "MNLOVO SAVER adds your reminders to the calendar when you ask. | يضيف MNLOVO SAVER تذكيراتك للتقويم إذا طلبت."
     entitlements:
       path: App/AYN.entitlements
       properties:
-        com.apple.security.application-groups: [group.com.mnlovo.ayn]
+        com.apple.security.application-groups: [group.com.mnlovo.saver]
     dependencies:
       - target: AYNWidget
     scheme: {}
@@ -80,9 +81,10 @@ targets:
     sources:
       - path: Widget
       - path: Shared
+      - path: App/Resources/Fonts
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.mnlovo.ayn.widget
+        PRODUCT_BUNDLE_IDENTIFIER: com.mnlovo.saver.widget
         PRODUCT_NAME: AYNWidget
         INFOPLIST_FILE: Widget/Info.plist
         CODE_SIGN_ENTITLEMENTS: Widget/AYNWidget.entitlements
@@ -91,17 +93,18 @@ targets:
       path: Widget/Info.plist
       properties:
         CFBundleDevelopmentRegion: ar
-        CFBundleDisplayName: AYN
-        CFBundleName: AYNWidget
+        CFBundleDisplayName: MNLOVO SAVER
+        CFBundleName: SaverWidget
         CFBundleExecutable: $(EXECUTABLE_NAME)
         CFBundleIdentifier: $(PRODUCT_BUNDLE_IDENTIFIER)
         CFBundleInfoDictionaryVersion: "6.0"
         CFBundlePackageType: XPC!
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UIAppFonts: [SomarSans-Regular.otf, SomarSans-Medium.otf, SomarSans-SemiBold.otf, SomarSans-Bold.otf, SomarSans-ExtraBold.otf]
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     entitlements:
       path: Widget/AYNWidget.entitlements
       properties:
-        com.apple.security.application-groups: [group.com.mnlovo.ayn]
+        com.apple.security.application-groups: [group.com.mnlovo.saver]

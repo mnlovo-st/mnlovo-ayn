@@ -72,10 +72,10 @@ struct RemindersView: View {
         .confirmationDialog(tr("متأكد إنك خلصتها؟", "Sure you finished it?"),
                             isPresented: Binding(get: { confirming != nil }, set: { if !$0 { confirming = nil } }),
                             titleVisibility: .visible) {
-            Button(tr("✅ إيه خلصتها — اقفل المهمة", "✅ Yes, close it")) {
+            Button(tr("✓ هيه خلصتها، اقفل المهمة", "✓ Yes, done — close it")) {
                 if let r = confirming { complete(r) }
             }
-            Button(tr("لا، لسّا", "Not yet"), role: .cancel) { confirming = nil }
+            Button(tr("لا بعدني", "Not yet"), role: .cancel) { confirming = nil }
         }
         .onAppear { state.reminders = RemindersStore.load(state.space) }
     }
@@ -333,7 +333,7 @@ struct ReminderEditor: View {
         } else {
             state.show(tr("تمام! بذكّرك 🔔", "Done! I'll remind you 🔔"), icon: "bell.fill")
         }
-        FX.success()
+        Haptics.success()
         dismiss()
     }
 }

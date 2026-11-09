@@ -4,6 +4,7 @@ import UserNotifications
 final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        FontBook.registerAll()
         UNUserNotificationCenter.current().delegate = self
         ReminderEngine.registerCategories()
         return true
@@ -24,7 +25,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
 }
 
 extension Notification.Name {
-    static let aynRemindersChanged = Notification.Name("ayn.reminders.changed")
+    static let aynRemindersChanged = Notification.Name("saver.reminders.changed")
 }
 
 @main
@@ -111,7 +112,7 @@ struct PrivacyCover: View {
             Theme.bg.opacity(0.85)
             VStack(spacing: 16) {
                 EyeView(mood: .closed, size: 110)
-                Text(recording ? tr("المحتوى مخفي أثناء تسجيل الشاشة", "Hidden during screen recording") : "MNLOVO AYN")
+                Text(recording ? tr("المحتوى مخفي أثناء تسجيل الشاشة", "Hidden during screen recording") : Brand.appName)
                     .font(Theme.font(recording ? 16 : 22, .bold))
                     .foregroundStyle(Theme.sub)
             }

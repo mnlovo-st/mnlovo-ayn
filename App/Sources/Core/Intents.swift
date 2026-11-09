@@ -1,10 +1,10 @@
 import AppIntents
 import Foundation
 
-/// Siri & Shortcuts: add a reminder or ask for the next one — works even while AYN is locked.
+/// Siri & Shortcuts: add a reminder or ask for the next one — works even while the app is locked.
 struct AddReminderIntent: AppIntent {
-    static var title: LocalizedStringResource = "Add AYN reminder"
-    static var description = IntentDescription("Adds a reminder to AYN with escalating alerts (3 days, 2 days, 1 day, then nagging on the last day).")
+    static var title: LocalizedStringResource = "Add SAVER reminder"
+    static var description = IntentDescription("Adds a reminder to MNLOVO SAVER with escalating alerts (3 days, 2 days, 1 day, then nagging on the last day).")
     static var openAppWhenRun = false
 
     @Parameter(title: "Title")
@@ -15,7 +15,7 @@ struct AddReminderIntent: AppIntent {
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
         guard VaultStorage.exists(.real), RemindersStore.key(.real) != nil else {
-            return .result(dialog: IntentDialog(LocalizedStringResource(stringLiteral: tr("افتح AYN مرة وحدة أولاً.", "Open AYN once first."))))
+            return .result(dialog: IntentDialog(LocalizedStringResource(stringLiteral: tr("افتح MNLOVO SAVER مرة وحدة أولاً.", "Open MNLOVO SAVER once first."))))
         }
         var list = RemindersStore.load(.real)
         list.append(Reminder(title: reminderTitle, due: due))
@@ -27,7 +27,7 @@ struct AddReminderIntent: AppIntent {
 }
 
 struct NextReminderIntent: AppIntent {
-    static var title: LocalizedStringResource = "Next AYN task"
+    static var title: LocalizedStringResource = "Next SAVER task"
     static var description = IntentDescription("Tells you your nearest unfinished reminder.")
     static var openAppWhenRun = false
 

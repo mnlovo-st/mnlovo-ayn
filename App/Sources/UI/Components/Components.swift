@@ -9,22 +9,36 @@ struct AuroraBackground: View {
     var body: some View {
         ZStack {
             Theme.bg
-            Circle().fill(Theme.accent.opacity(0.22))
-                .frame(width: 380, height: 380)
-                .blur(radius: 110)
-                .offset(x: move ? -120 : -60, y: move ? -300 : -230)
-            Circle().fill(Theme.accent2.opacity(0.28))
-                .frame(width: 420, height: 420)
+            if #available(iOS 18.0, *) {
+                TimelineView(.animation(minimumInterval: 1.0 / 20.0)) { ctx in
+                    let t = Float(ctx.date.timeIntervalSinceReferenceDate * 0.12)
+                    let cx: Float = 0.5 + 0.12 * sin(t)
+                    let cy: Float = 0.45 + 0.1 * cos(t * 1.3)
+                    let pts: [SIMD2<Float>] = [
+                        SIMD2(0, 0), SIMD2(0.5, 0), SIMD2(1, 0),
+                        SIMD2(0, 0.5), SIMD2(cx, cy), SIMD2(1, 0.5),
+                        SIMD2(0, 1), SIMD2(0.5, 1), SIMD2(1, 1)
+                    ]
+                    MeshGradient(width: 3, height: 3, points: pts, colors: [
+                        Color(hex: 0x0B2A2B), Theme.bg, Color(hex: 0x120E2C),
+                        Theme.bg, Color(hex: 0x0A0C18), Theme.bg,
+                        Color(hex: 0x0E0B26), Theme.bg, Color(hex: 0x1E0F33)
+                    ])
+                    .opacity(0.95)
+                }
+            }
+            Circle().fill(Theme.accent.opacity(0.16))
+                .frame(width: 360, height: 360)
                 .blur(radius: 120)
-                .offset(x: move ? 140 : 90, y: move ? 320 : 250)
-            Circle().fill(Color(hex: 0x2A6BFF).opacity(0.10))
-                .frame(width: 300, height: 300)
-                .blur(radius: 100)
-                .offset(x: move ? 80 : 130, y: move ? -40 : 20)
+                .offset(x: move ? -120 : -60, y: move ? -320 : -250)
+            Circle().fill(Theme.accent2.opacity(0.2))
+                .frame(width: 420, height: 420)
+                .blur(radius: 130)
+                .offset(x: move ? 140 : 90, y: move ? 330 : 260)
         }
         .ignoresSafeArea()
         .onAppear {
-            withAnimation(.easeInOut(duration: 9).repeatForever(autoreverses: true)) { move = true }
+            withAnimation(.easeInOut(duration: 10).repeatForever(autoreverses: true)) { move = true }
         }
     }
 }
@@ -40,13 +54,17 @@ struct GlassCard: ViewModifier {
             .padding(padding)
             .background(
                 RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .fill(Theme.surface)
-                    .background(RoundedRectangle(cornerRadius: radius, style: .continuous).fill(.ultraThinMaterial).opacity(0.35))
+                    .fill(LinearGradient(colors: [Color.white.opacity(0.075), Color.white.opacity(0.03)],
+                                         startPoint: .top, endPoint: .bottom))
+                    .background(RoundedRectangle(cornerRadius: radius, style: .continuous).fill(.ultraThinMaterial).opacity(0.4))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .strokeBorder((tint ?? .white).opacity(tint == nil ? 0.08 : 0.35), lineWidth: 1)
+                    .strokeBorder(LinearGradient(colors: [(tint ?? .white).opacity(tint == nil ? 0.14 : 0.5),
+                                                          (tint ?? .white).opacity(tint == nil ? 0.03 : 0.15)],
+                                                 startPoint: .top, endPoint: .bottom), lineWidth: 1)
             )
+            .shadow(color: .black.opacity(0.25), radius: 14, y: 6)
     }
 }
 
@@ -429,7 +447,6 @@ enum Clipboard {
     static func copy(_ text: String) {
         UIPasteboard.general.setItems([[UTType.plainText.identifier: text]], options: [.localOnly: true])
         Haptics.success()
-        SoundFX.shared.play(.toggle, volume: 0.4)
     }
 }
 

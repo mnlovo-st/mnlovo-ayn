@@ -13,7 +13,7 @@ import CryptoKit
 enum VaultStorage {
     static var root: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return base.appendingPathComponent("AYN", isDirectory: true)
+        return base.appendingPathComponent("Saver", isDirectory: true)
     }
 
     static func dir(_ space: VaultSpace) -> URL {
@@ -39,7 +39,7 @@ enum VaultStorage {
     }
 
     static var tempDir: URL {
-        let d = FileManager.default.temporaryDirectory.appendingPathComponent("ayn-view", isDirectory: true)
+        let d = FileManager.default.temporaryDirectory.appendingPathComponent("saver-view", isDirectory: true)
         ensure(d)
         return d
     }
@@ -162,6 +162,7 @@ enum RemindersStore {
         guard let k = key(space) else { return }
         try? VaultStorage.save(list, fileName, space: space, key: k,
                                protection: .completeFileProtectionUntilFirstUserAuthentication)
+        if space == .real { UserDefaults.standard.set(true, forKey: "backup.dirty") }
     }
 
     static func update(_ space: VaultSpace, _ id: UUID, _ change: (inout Reminder) -> Void) {

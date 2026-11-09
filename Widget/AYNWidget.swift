@@ -6,8 +6,21 @@ private let teal = Color(red: 0.224, green: 0.902, blue: 0.784)
 private let indigo = Color(red: 0.482, green: 0.424, blue: 1.0)
 private let night = Color(red: 0.027, green: 0.031, blue: 0.051)
 
+/// Somar Sans in the widget (falls back to the system font if missing).
+private func wf(_ size: CGFloat, _ weight: Font.Weight) -> Font {
+    let name: String
+    switch weight {
+    case .medium: name = "SomarSans-Medium"
+    case .semibold: name = "SomarSans-SemiBold"
+    case .bold: name = "SomarSans-Bold"
+    case .heavy, .black: name = "SomarSans-ExtraBold"
+    default: name = "SomarSans-Regular"
+    }
+    return .custom(name, fixedSize: size)
+}
+
 @main
-struct AYNWidgetBundle: WidgetBundle {
+struct SaverWidgetBundle: WidgetBundle {
     var body: some Widget {
         NextTasksWidget()
         ReminderLiveActivity()
@@ -47,7 +60,7 @@ struct NextTasksWidget: Widget {
                     LinearGradient(colors: [night, Color(red: 0.06, green: 0.06, blue: 0.12)], startPoint: .top, endPoint: .bottom)
                 }
         }
-        .configurationDisplayName("AYN")
+        .configurationDisplayName("MNLOVO SAVER")
         .description("Next reminders · التذكيرات القادمة")
         .supportedFamilies([.systemSmall, .systemMedium, .accessoryRectangular, .accessoryInline, .accessoryCircular])
     }
@@ -81,38 +94,38 @@ struct TasksWidgetView: View {
                 AccessoryWidgetBackground()
                 VStack(spacing: 0) {
                     Image(systemName: "eye.fill").font(.system(size: 12))
-                    Text("\(items.count)").font(.system(size: 18, weight: .bold, design: .rounded))
+                    Text("\(items.count)").font(wf(18, .bold))
                 }
             }
         case .accessoryRectangular:
             VStack(alignment: .leading, spacing: 2) {
-                Label("AYN", systemImage: "eye.fill").font(.system(size: 12, weight: .bold, design: .rounded))
+                Label("SAVER", systemImage: "eye.fill").font(wf(12, .bold))
                 if let f = items.first {
-                    Text(f.title).font(.system(size: 14, weight: .semibold, design: .rounded)).lineLimit(1)
-                    Text(f.due, style: .relative).font(.system(size: 12, design: .rounded))
+                    Text(f.title).font(wf(14, .semibold)).lineLimit(1)
+                    Text(f.due, style: .relative).font(wf(12, .regular))
                 } else {
-                    Text(ar ? "ما في مهام 🎉" : "All clear 🎉").font(.system(size: 14, weight: .semibold, design: .rounded))
+                    Text(ar ? "ما في مهام 🎉" : "All clear 🎉").font(wf(14, .semibold))
                 }
             }
         default:
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 6) {
                     Image(systemName: "eye.fill").foregroundStyle(LinearGradient(colors: [teal, indigo], startPoint: .leading, endPoint: .trailing))
-                    Text(ar ? "التذكيرات" : "Reminders").font(.system(size: 14, weight: .heavy, design: .rounded)).foregroundStyle(.white)
+                    Text(ar ? "التذكيرات" : "Reminders").font(wf(14, .heavy)).foregroundStyle(.white)
                     Spacer()
-                    Text("\(items.count)").font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.white.opacity(0.5))
+                    Text("\(items.count)").font(wf(13, .bold)).foregroundStyle(.white.opacity(0.5))
                 }
                 if items.isEmpty {
                     Spacer()
-                    Text(ar ? "ولا شي 🎉" : "All clear 🎉").font(.system(size: 16, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                    Text(ar ? "ولا شي 🎉" : "All clear 🎉").font(wf(16, .bold)).foregroundStyle(.white)
                     Spacer()
                 } else {
                     ForEach(items.prefix(family == .systemSmall ? 2 : 3)) { item in
                         HStack(spacing: 8) {
                             RoundedRectangle(cornerRadius: 2).fill(color(item.due)).frame(width: 4, height: 30)
                             VStack(alignment: .leading, spacing: 1) {
-                                Text(item.title).font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.white).lineLimit(1)
-                                Text(item.due, style: .relative).font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundStyle(color(item.due))
+                                Text(item.title).font(wf(13, .bold)).foregroundStyle(.white).lineLimit(1)
+                                Text(item.due, style: .relative).font(wf(11, .semibold)).foregroundStyle(color(item.due))
                             }
                             Spacer(minLength: 0)
                         }
@@ -138,13 +151,13 @@ struct ReminderLiveActivity: Widget {
                     .frame(width: 44, height: 44)
                     .background(Circle().fill(.white.opacity(0.08)))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(context.attributes.title).font(.system(size: 16, weight: .bold, design: .rounded)).foregroundStyle(.white).lineLimit(1)
+                    Text(context.attributes.title).font(wf(16, .bold)).foregroundStyle(.white).lineLimit(1)
                     Text(context.attributes.isArabic ? "آخر يوم — سويتها؟" : "Last day — done yet?")
-                        .font(.system(size: 12, weight: .semibold, design: .rounded)).foregroundStyle(.white.opacity(0.6))
+                        .font(wf(12, .semibold)).foregroundStyle(.white.opacity(0.6))
                 }
                 Spacer()
                 Text(timerInterval: min(Date(), due)...due, countsDown: true)
-                    .font(.system(size: 20, weight: .heavy, design: .rounded))
+                    .font(wf(20, .heavy))
                     .monospacedDigit()
                     .foregroundStyle(teal)
                     .frame(width: 90)
@@ -162,14 +175,14 @@ struct ReminderLiveActivity: Widget {
                 }
                 DynamicIslandExpandedRegion(.trailing) {
                     Text(timerInterval: min(Date(), due)...due, countsDown: true)
-                        .font(.system(size: 18, weight: .heavy, design: .rounded))
+                        .font(wf(18, .heavy))
                         .monospacedDigit()
                         .foregroundStyle(teal)
                         .frame(width: 80)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     Text(context.attributes.title)
-                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .font(wf(15, .bold))
                         .lineLimit(1)
                 }
             } compactLeading: {
@@ -177,7 +190,7 @@ struct ReminderLiveActivity: Widget {
             } compactTrailing: {
                 Text(timerInterval: min(Date(), due)...due, countsDown: true)
                     .monospacedDigit()
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .font(wf(13, .bold))
                     .foregroundStyle(teal)
                     .frame(maxWidth: 52)
             } minimal: {

@@ -23,37 +23,25 @@ struct SettingsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
+            VStack(spacing: 18) {
                 TabHeader(title: MainTab.settings.title, subtitle: state.profile?.username ?? "") { EmptyView() }
 
-                if let p = state.profile {
-                    HStack(spacing: 14) {
-                        EyeView(mood: .idle, size: 64)
-                            .frame(width: 70, height: 60)
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(p.username).font(Theme.font(20, .heavy)).foregroundStyle(Theme.text)
-                            HStack(spacing: 6) {
-                                Text(p.email).font(Theme.font(13)).foregroundStyle(Theme.sub)
-                                if p.emailVerified { Image(systemName: "checkmark.seal.fill").foregroundStyle(Theme.ok).font(.system(size: 12)) }
-                            }
-                            Text(tr("عضو منذ \(Fmt.date(p.created, time: false))", "Member since \(Fmt.date(p.created, time: false))"))
-                                .font(Theme.font(11)).foregroundStyle(Theme.faint)
-                        }
-                        Spacer()
-                    }
-                    .glass(14)
-                    .padding(.horizontal, 20)
-                }
+                if let p = state.profile { profileCard(p) }
 
                 group(tr("الحساب", "Account"), "person.crop.circle") {
                     row("key.fill", tr("تغيير كلمة السر", "Change password")) { sheet = .password }
-                    row("lock.square.stack.fill", tr("كلمة سر الأقسام", "Section password")) { sheet = .section }
+                    divider
+                    row("circle.grid.3x3.fill", tr("رمز الأقسام", "Section passcode"), value: state.sectionKind.title) { sheet = .section }
+                    divider
                     row("lock.rotation", tr("التحقق بخطوتين (QR)", "Two-factor (QR)")) { sheet = .twoFA }
+                    divider
                     row("key.horizontal.fill", tr("مفتاح استرجاع جديد", "New recovery key")) { sheet = .recovery }
                 }
 
                 group(tr("الأمان", "Security"), "lock.shield.fill") {
-                    toggleRow(Biometrics.icon, tr("الدخول بـ \(Biometrics.name)", "Unlock with \(Biometrics.name)"), $bioOn)
+                    toggleRow(Biometrics.icon, tr("\(Biometrics.name) + كلمة السر عند الدخول", "\(Biometrics.name) + password to enter"),
+                              sub: bioOn ? nil : tr("بدونه: كلمة السر + رمز التحقق كل مرة", "Without it: password + 2FA code each time"),
+                              $bioOn)
                         .onChange(of: bioOn) { _, v in
                             guard v != state.biometricsOn else { return }
                             Task {
@@ -62,69 +50,86 @@ struct SettingsView: View {
                             }
                         }
                         .disabled(state.isDecoy || !Biometrics.isAvailable)
-                    toggleRow("faceid", tr("\(Biometrics.name) للأقسام بدل كلمة السر", "\(Biometrics.name) for sections"), $sectionBio)
+                    divider
+                    toggleRow("faceid", tr("\(Biometrics.name) بدل رمز الأقسام", "\(Biometrics.name) instead of section passcode"), $sectionBio)
+                    divider
                     Menu {
-                        ForEach([0, 30, 60, 300], id: \.self) { s in
-                            Button(lockLabel(s)) { state.autoLockSeconds = s; FX.toggle() }
+                        ForEach([5, 30, 60, 300, 0], id: \.self) { s in
+                            Button(lockLabel(s)) { state.autoLockSeconds = s; Haptics.selection() }
                         }
                     } label: {
-                        rowLabel("timer", tr("القفل التلقائي", "Auto-lock"), value: lockLabel(state.autoLockSeconds))
+                        rowLabel("timer", tr("يقفل إذا طلعت من التطبيق", "Locks after leaving the app"), value: lockLabel(state.autoLockSeconds))
                     }
+                    divider
                     toggleRow("camera.metering.spot", tr("تصوير المتطفل (٣ محاولات)", "Intruder photo (3 attempts)"), $intruder)
                         .onChange(of: intruder) { _, v in
                             if v { Task { intruder = await IntruderCam.requestPermission() } }
                         }
+                    divider
                     row("eye.trianglebadge.exclamationmark.fill", tr("سجل المتطفلين", "Intruder log"),
                         badge: state.newIntrusions > 0 ? "\(state.newIntrusions)" : nil) { sheet = .intruders }
+                    divider
                     toggleRow("camera.viewfinder", tr("تنبيه لقطة الشاشة", "Screenshot alert"), $screenshotAlert)
                     if !state.isDecoy {
+                        divider
                         row("theatermasks.fill", tr("كلمة سر الطوارئ", "Duress password"),
                             value: state.hasDuress ? tr("مفعّلة", "On") : tr("مطفأة", "Off")) { sheet = .duress }
                     }
                 }
 
-                group(tr("الإشعارات والتذكيرات", "Notifications"), "bell.badge.fill") {
+                group(tr("النسخ الاحتياطي", "Backup"), "icloud.fill") {
+                    backupStatus
+                    divider
+                    row("arrow.up.arrow.down.circle.fill", tr("النسخ والاستعادة", "Backup & restore")) { sheet = .backup }
+                    if SupabaseConfig.url.isEmpty {
+                        divider
+                        row("cloud.fill", tr("إعداد السحابة", "Cloud setup"),
+                            value: SupabaseClient.shared.isConfigured ? tr("جاهز", "Ready") : tr("غير مُعد", "Not set")) { sheet = .cloudSetup }
+                    }
+                }
+
+                group(tr("التذكيرات", "Reminders"), "bell.badge.fill") {
                     toggleRow("platter.filled.top.iphone", tr("العد التنازلي في Dynamic Island", "Dynamic Island countdown"), $liveActivity)
                         .onChange(of: liveActivity) { _, _ in LiveActivityManager.sync() }
+                    divider
                     row("bell.and.waves.left.and.right.fill", tr("إشعار تجريبي", "Test notification")) { Task { await testNotification() } }
+                    divider
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(tr("Siri والاختصارات: «Add a reminder in AYN»", "Siri & Shortcuts: “Add a reminder in AYN”"))
+                        Text(tr("Siri والاختصارات: «Add a reminder in MNLOVO SAVER»", "Siri & Shortcuts: “Add a reminder in MNLOVO SAVER”"))
                             .font(Theme.font(13, .semibold)).foregroundStyle(Theme.sub)
                         ShortcutsLink()
                             .shortcutsLinkStyle(.automaticOutline)
                     }
-                    .padding(.vertical, 8)
+                    .padding(.vertical, 10)
                 }
 
                 group(tr("المظهر والصوت", "Look & sound"), "paintpalette.fill") {
                     Menu {
                         ForEach(AppLanguage.allCases) { l in
-                            Button(l.nativeName) { lang = l.rawValue; WidgetBridge.update(); FX.toggle() }
+                            Button(l.nativeName) { lang = l.rawValue; WidgetBridge.update(); Haptics.selection() }
                         }
                     } label: {
                         rowLabel("globe", tr("اللغة", "Language"), value: (AppLanguage(rawValue: lang) ?? .ar).nativeName)
                     }
-                    toggleRow("speaker.wave.2.fill", tr("الأصوات", "Sounds"), $sound)
+                    divider
+                    toggleRow("speaker.wave.2.fill", tr("الأصوات", "Sounds"),
+                              sub: tr("بس في اللحظات المهمة: الفتح، النجاح، الخطأ", "Only key moments: unlock, success, error"), $sound)
+                    divider
                     toggleRow("hand.tap.fill", tr("الاهتزازات", "Haptics"), $haptics)
-                }
-
-                group(tr("النسخ الاحتياطي", "Backup"), "externaldrive.fill.badge.icloud") {
-                    row("cloud.fill", tr("إعداد Supabase", "Supabase setup"),
-                        value: SupabaseClient.shared.isConfigured ? tr("جاهز", "Ready") : tr("غير مُعد", "Not set")) { sheet = .cloudSetup }
-                    row("arrow.up.arrow.down.circle.fill", tr("النسخ والاستعادة", "Backup & restore"),
-                        value: state.lastBackup.map { Fmt.relative($0) } ?? tr("ما في", "None")) { sheet = .backup }
                 }
 
                 group(tr("منطقة الخطر", "Danger zone"), "exclamationmark.triangle.fill") {
                     row("trash.fill", tr("حذف كل شي من الجوال", "Erase everything on this iPhone"), tint: Theme.danger) { confirmErase = true }
                 }
 
-                VStack(spacing: 4) {
-                    Text("MNLOVO AYN · v1.0").font(Theme.font(13, .bold)).foregroundStyle(Theme.sub)
-                    Text(tr("صُنع بواسطة MNLOVO · AES-256 · Secure Enclave", "Made by MNLOVO · AES-256 · Secure Enclave"))
+                VStack(spacing: 8) {
+                    BrandMark(size: 44)
+                    Text("\(Brand.appName) · v2.0").font(Theme.font(14, .heavy)).foregroundStyle(Theme.sub)
+                    Text(tr("AES-256 · Secure Enclave · مشفّر على جهازك", "AES-256 · Secure Enclave · encrypted on device"))
                         .font(Theme.font(11)).foregroundStyle(Theme.faint)
+                    Text(Brand.copyright).font(Theme.font(12, .bold)).foregroundStyle(Theme.faint)
                 }
-                .padding(.top, 6)
+                .padding(.top, 8)
             }
             .padding(.bottom, 20)
         }
@@ -150,9 +155,60 @@ struct SettingsView: View {
         }
     }
 
+    private func profileCard(_ p: Profile) -> some View {
+        HStack(spacing: 14) {
+            ZStack {
+                Circle().fill(Theme.softGradient)
+                Text(String(p.username.prefix(1)).uppercased())
+                    .font(Theme.font(26, .heavy)).foregroundStyle(Theme.gradient)
+            }
+            .frame(width: 58, height: 58)
+            .overlay(Circle().strokeBorder(Theme.gradient, lineWidth: 1.5))
+            VStack(alignment: .leading, spacing: 3) {
+                Text(p.username).font(Theme.font(20, .heavy)).foregroundStyle(Theme.text)
+                HStack(spacing: 6) {
+                    Text(p.email).font(Theme.font(13)).foregroundStyle(Theme.sub).lineLimit(1)
+                    if p.emailVerified { Image(systemName: "checkmark.seal.fill").foregroundStyle(Theme.ok).font(.system(size: 12)) }
+                }
+                Text(tr("عضو منذ \(Fmt.date(p.created, time: false))", "Member since \(Fmt.date(p.created, time: false))"))
+                    .font(Theme.font(11)).foregroundStyle(Theme.faint)
+            }
+            Spacer()
+        }
+        .glass(16)
+        .padding(.horizontal, 20)
+    }
+
+    private var backupStatus: some View {
+        HStack(spacing: 12) {
+            Image(systemName: state.cloudReady ? (state.syncError == nil ? "checkmark.icloud.fill" : "exclamationmark.icloud.fill") : "icloud.slash")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(state.cloudReady ? (state.syncError == nil ? Theme.ok : Theme.warn) : Theme.faint)
+                .symbolEffect(.pulse, isActive: state.syncing)
+                .frame(width: 28)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(state.cloudReady ? tr("النسخ التلقائي شغّال", "Auto-backup is on") : tr("السحابة غير مربوطة", "Cloud not connected"))
+                    .font(Theme.font(15, .semibold)).foregroundStyle(Theme.text)
+                Text(statusLine).font(Theme.font(12)).foregroundStyle(Theme.sub)
+            }
+            Spacer()
+            if state.syncing { ProgressView().tint(Theme.accent) }
+        }
+        .padding(.vertical, 10)
+    }
+
+    private var statusLine: String {
+        if state.isDecoy { return tr("آخر مزامنة: قبل لحظات", "Last sync: moments ago") }
+        if !state.cloudReady { return tr("اربطها من «النسخ والاستعادة» بكود الإيميل", "Connect it in Backup & restore with an email code") }
+        if let e = state.syncError { return e }
+        if let d = state.lastBackup { return tr("آخر مزامنة \(Fmt.relative(d)) · بدون الصور والملفات", "Last sync \(Fmt.relative(d)) · photos & files excluded") }
+        return tr("بتنسخ أول ما تعدّل شي", "Will sync after your next change")
+    }
+
     private func lockLabel(_ s: Int) -> String {
         switch s {
         case 0: return tr("فوراً", "Immediately")
+        case 5: return tr("بعد ٥ ثواني", "After 5 seconds")
         case 30: return tr("بعد ٣٠ ثانية", "After 30 seconds")
         case 60: return tr("بعد دقيقة", "After 1 minute")
         default: return tr("بعد ٥ دقايق", "After 5 minutes")
@@ -165,7 +221,7 @@ struct SettingsView: View {
             return
         }
         let c = UNMutableNotificationContent()
-        c.title = "MNLOVO AYN"
+        c.title = Brand.appName
         c.body = tr("هذا شكل التذكير 👀 سويتها؟", "This is how reminders look 👀 Done yet?")
         c.sound = UNNotificationSound(named: UNNotificationSoundName("notify.wav"))
         c.categoryIdentifier = ReminderEngine.category
@@ -176,18 +232,26 @@ struct SettingsView: View {
 
     // MARK: Building blocks
 
+    private var divider: some View { Divider().overlay(Theme.stroke).padding(.leading, 40) }
+
     private func group<Content: View>(_ title: String, _ icon: String, @ViewBuilder _ content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             SectionTitle(text: title, icon: icon)
             VStack(spacing: 0) { content() }
-                .glass(14)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 4)
+                .glass(0, radius: 22)
         }
         .padding(.horizontal, 20)
     }
 
     private func rowLabel(_ icon: String, _ title: String, value: String? = nil, badge: String? = nil, tint: Color = Theme.accent) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: icon).font(.system(size: 16, weight: .semibold)).foregroundStyle(tint).frame(width: 28)
+            Image(systemName: icon)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(tint)
+                .frame(width: 30, height: 30)
+                .background(RoundedRectangle(cornerRadius: 9).fill(tint.opacity(0.13)))
             Text(title).font(Theme.font(15, .semibold)).foregroundStyle(tint == Theme.danger ? Theme.danger : Theme.text)
             Spacer()
             if let badge {
@@ -203,19 +267,26 @@ struct SettingsView: View {
 
     private func row(_ icon: String, _ title: String, value: String? = nil, badge: String? = nil,
                      tint: Color = Theme.accent, action: @escaping () -> Void) -> some View {
-        Button { FX.tap(); action() } label: { rowLabel(icon, title, value: value, badge: badge, tint: tint) }
+        Button { Haptics.tap(); action() } label: { rowLabel(icon, title, value: value, badge: badge, tint: tint) }
             .buttonStyle(.plain)
     }
 
-    private func toggleRow(_ icon: String, _ title: String, _ binding: Binding<Bool>) -> some View {
+    private func toggleRow(_ icon: String, _ title: String, sub: String? = nil, _ binding: Binding<Bool>) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: icon).font(.system(size: 16, weight: .semibold)).foregroundStyle(Theme.accent).frame(width: 28)
-            Text(title).font(Theme.font(15, .semibold)).foregroundStyle(Theme.text)
+            Image(systemName: icon)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Theme.accent)
+                .frame(width: 30, height: 30)
+                .background(RoundedRectangle(cornerRadius: 9).fill(Theme.accent.opacity(0.13)))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(Theme.font(15, .semibold)).foregroundStyle(Theme.text)
+                if let sub { Text(sub).font(Theme.font(11)).foregroundStyle(Theme.sub) }
+            }
             Spacer()
             Toggle("", isOn: binding).labelsHidden().tint(Theme.accent)
         }
-        .padding(.vertical, 6)
-        .onChange(of: binding.wrappedValue) { _, _ in FX.toggle() }
+        .padding(.vertical, 8)
+        .onChange(of: binding.wrappedValue) { _, _ in Haptics.selection() }
     }
 }
 
@@ -276,31 +347,34 @@ struct ChangePasswordSheet: View {
 struct SectionPasswordSheet: View {
     @EnvironmentObject var state: AppState
     @Environment(\.dismiss) private var dismiss
-    @State private var current = ""
-    @State private var new = ""
-    @State private var confirm = ""
-    @State private var error: String?
+    @State private var verified = false
+    @State private var code = ""
+    @State private var shakes = 0
     @FocusState private var focus: AYNFieldID?
 
     var body: some View {
-        SheetScaffold(title: tr("كلمة سر الأقسام", "Section password")) {
-            Text(tr("تُطلب عند فتح «الحسابات» و«الخزنة»، ومع العناصر السرية جداً.", "Asked when opening Accounts and Vault, and for top-secret items."))
-                .font(Theme.font(14)).foregroundStyle(Theme.sub)
-            if state.hasSectionPassword {
-                AYNField(title: tr("الحالية", "Current"), icon: "lock.fill", text: $current, secure: true, focus: $focus, id: .current)
-            }
-            AYNField(title: tr("الجديدة (٤ أحرف على الأقل)", "New (4+ characters)"), icon: "lock.square.stack.fill", text: $new,
-                     secure: true, focus: $focus, id: .section)
-            AYNField(title: tr("أكّدها", "Confirm"), icon: "checkmark.shield.fill", text: $confirm, secure: true, focus: $focus, id: .sectionConfirm)
-            if let error { Text(error).font(Theme.font(14, .semibold)).foregroundStyle(Theme.danger) }
-            PrimaryButton(title: tr("حفظ", "Save"), icon: "checkmark", enabled: new.count >= 4 && new == confirm) {
-                Task {
-                    if state.hasSectionPassword, !(await state.checkSectionPassword(current)) {
-                        error = tr("الحالية غلط.", "Current is wrong."); FX.error(); return
+        SheetScaffold(title: tr("رمز الأقسام", "Section passcode")) {
+            if verified || !state.hasSectionPassword {
+                PasscodeSetupFlow { newCode, kind in
+                    Task {
+                        await state.setSectionPassword(newCode, kind: kind)
+                        state.show(tr("تم تغيير رمز الأقسام ✓", "Section passcode changed ✓"), icon: "lock.fill")
+                        dismiss()
                     }
-                    await state.setSectionPassword(new)
-                    state.show(tr("تم ✓", "Saved ✓"))
-                    dismiss()
+                }
+            } else {
+                EyeView(mood: code.isEmpty ? .idle : .lookUp, size: 110)
+                Text(tr("اكتب الرمز الحالي", "Enter the current passcode"))
+                    .font(Theme.font(20, .heavy)).foregroundStyle(Theme.text)
+                PasscodeEntry(kind: state.sectionKind, code: $code, shakes: shakes, focus: $focus) { entered in
+                    Task {
+                        if await state.checkSectionPassword(entered) {
+                            withAnimation(.spring) { verified = true }
+                        } else {
+                            shakes += 1
+                            code = ""
+                        }
+                    }
                 }
             }
         }
@@ -383,8 +457,8 @@ struct DuressSheet: View {
             VStack(alignment: .leading, spacing: 8) {
                 Label(tr("إذا أحد أجبرك تفتح التطبيق", "If someone forces you to open the app"), systemImage: "theatermasks.fill")
                     .font(Theme.font(16, .bold)).foregroundStyle(Theme.text)
-                Text(tr("اكتب كلمة سر الطوارئ بدل كلمتك الأصلية. يفتح خزنة ثانية فاضية تبيّن طبيعية تماماً (نفس اسمك ونفس رمز 2FA وكلمة سر الأقسام). بياناتك الحقيقية تبقى مخفية، والبصمة ما تفتح الخزنة الوهمية.",
-                        "Type the duress password instead of your real one. It opens a separate, empty vault that looks completely normal (same name, same 2FA, same section password). Your real data stays hidden."))
+                Text(tr("بعد Face ID، اكتب كلمة سر الطوارئ بدل كلمتك الأصلية. يفتح خزنة ثانية فاضية تبيّن طبيعية تماماً (نفس اسمك ورمز التحقق ورمز الأقسام). بياناتك الحقيقية تبقى مخفية.",
+                        "After Face ID, type the duress password instead of your real one. It opens a separate, empty vault that looks completely normal (same name, 2FA and section passcode). Your real data stays hidden."))
                     .font(Theme.font(13)).foregroundStyle(Theme.sub)
             }
             .glass(14, tint: Theme.accent2)
@@ -497,7 +571,7 @@ struct CloudSetupView: View {
                     SupabaseClient.shared.anon = key
                     result = await SupabaseClient.shared.testConnection()
                     testing = false
-                    if result == true { FX.success() } else { FX.error() }
+                    if result == true { Haptics.success() } else { FX.error() }
                 }
             }
         }
@@ -512,59 +586,60 @@ struct BackupView: View {
     @State private var error: String?
     @State private var exportURL: URL?
     @State private var showRestore = false
-    @State private var autoBackup = true
 
     private let sb = SupabaseClient.shared
 
     var body: some View {
         SheetScaffold(title: tr("النسخ الاحتياطي", "Backup")) {
-            VStack(alignment: .leading, spacing: 6) {
-                Label(tr("كل نسخة تتشفّر على جوالك قبل ما تطلع. السيرفر ما يقدر يقرأها.", "Every backup is encrypted on your phone first. The server can't read it."),
+            VStack(alignment: .leading, spacing: 8) {
+                Label(tr("تلقائي: الحسابات والملاحظات والتذكيرات والإعدادات تنحفظ في السحابة بعد كل تعديل.",
+                         "Automatic: accounts, notes, reminders and settings sync after every change."),
+                      systemImage: "arrow.triangle.2.circlepath.icloud.fill")
+                Label(tr("مشفّرة على جوالك بكلمة السر قبل ما تطلع. السيرفر ما يقدر يقرأها.",
+                         "Encrypted on your phone with your password first. The server can't read it."),
                       systemImage: "lock.shield.fill")
-                    .font(Theme.font(13, .semibold)).foregroundStyle(Theme.sub)
-                if let last = state.lastBackup {
-                    Text(tr("آخر نسخة سحابية: \(Fmt.relative(last))", "Last cloud backup: \(Fmt.relative(last))"))
-                        .font(Theme.font(13)).foregroundStyle(Theme.faint)
-                }
+                Label(tr("الصور والفيديو والملفات ما تنرفع — احفظها بالنسخة الكاملة تحت.",
+                         "Photos, videos and files aren't uploaded — use the full backup below for them."),
+                      systemImage: "photo.on.rectangle.angled")
             }
+            .font(Theme.font(13, .medium)).foregroundStyle(Theme.sub)
             .frame(maxWidth: .infinity, alignment: .leading)
             .glass(14)
 
-            SectionTitle(text: tr("السحابة (Supabase)", "Cloud (Supabase)"), icon: "icloud.fill")
+            SectionTitle(text: tr("السحابة", "Cloud"), icon: "icloud.fill")
             if !sb.isConfigured {
-                Text(tr("جهّز Supabase أولاً من الإعدادات.", "Set up Supabase first in Settings.")).font(Theme.font(14)).foregroundStyle(Theme.warn)
+                Text(tr("السحابة غير مُعدّة بعد.", "The cloud isn't set up yet.")).font(Theme.font(14)).foregroundStyle(Theme.warn)
             } else if sb.session == nil {
+                Text(tr("مرة وحدة بس: بنرسل كود إلى \(state.profile?.email ?? "")", "One time only: we'll send a code to \(state.profile?.email ?? "")"))
+                    .font(Theme.font(14)).foregroundStyle(Theme.sub)
                 if !codeSent {
-                    PrimaryButton(title: tr("سجّل دخول بكود الإيميل", "Sign in with an email code"), icon: "envelope.fill", loading: loading) {
+                    PrimaryButton(title: tr("اربط السحابة", "Connect cloud"), icon: "envelope.fill", loading: loading) {
                         Task { await sendCode() }
                     }
                 } else {
-                    Text(tr("الكود وصل إلى \(state.profile?.email ?? "")", "Code sent to \(state.profile?.email ?? "")"))
-                        .font(Theme.font(14)).foregroundStyle(Theme.sub)
                     CodeField(code: $code, length: 8)
-                    PrimaryButton(title: tr("تحقق", "Verify"), icon: "checkmark", loading: loading, enabled: code.count >= 6) {
+                    PrimaryButton(title: tr("تحقق واربط", "Verify & connect"), icon: "checkmark", loading: loading, enabled: code.count >= 6) {
                         Task { await verify() }
                     }
                 }
             } else {
-                PrimaryButton(title: tr("انسخ للسحابة الحين", "Back up to cloud now"), icon: "icloud.and.arrow.up.fill", loading: loading) {
-                    Task { await cloudBackup() }
+                HStack(spacing: 10) {
+                    Image(systemName: "checkmark.icloud.fill").foregroundStyle(Theme.ok)
+                    Text(state.lastBackup.map { tr("آخر مزامنة \(Fmt.relative($0))", "Last sync \(Fmt.relative($0))") } ?? tr("مربوطة ✓", "Connected ✓"))
+                        .font(Theme.font(14, .semibold)).foregroundStyle(Theme.text)
+                    Spacer()
                 }
-                Toggle(isOn: $autoBackup) {
-                    Text(tr("نسخ تلقائي أسبوعي", "Weekly auto-backup")).font(Theme.font(15, .semibold))
-                }
-                .tint(Theme.accent).glass(12)
-                .onChange(of: autoBackup) { _, v in state.autoBackup = v }
-                Text(tr("الملفات فوق ٥ ميغا (مثل الفيديو) ما تنرفع للسحابة المجانية — استخدم النسخة الكاملة كملف.",
-                        "Files over 5 MB (like videos) skip the free cloud — use the full file backup for those."))
-                    .font(Theme.font(12)).foregroundStyle(Theme.faint)
-                Button { sb.signOut(); state.objectWillChange.send() } label: {
-                    Text(tr("تسجيل خروج من السحابة", "Sign out of cloud")).font(Theme.font(13, .semibold)).foregroundStyle(Theme.sub)
+                SecondaryButton(title: tr("زامن الحين", "Sync now"), icon: "arrow.triangle.2.circlepath", color: Theme.accent) {
+                    Task {
+                        loading = true
+                        if await state.backupNow() { state.show(tr("تمت المزامنة ✓", "Synced ✓"), icon: "icloud.fill") }
+                        loading = false
+                    }
                 }
             }
 
-            SectionTitle(text: tr("ملف كامل (يشمل الفيديو)", "Full file (includes videos)"), icon: "doc.zipper")
-            SecondaryButton(title: tr("صدّر نسخة كاملة (.ayn)", "Export full backup (.ayn)"), icon: "square.and.arrow.up", color: Theme.accent) {
+            SectionTitle(text: tr("نسخة كاملة كملف (مع الصور والفيديو)", "Full file backup (with photos & videos)"), icon: "doc.zipper")
+            SecondaryButton(title: tr("صدّر نسخة كاملة", "Export full backup"), icon: "square.and.arrow.up", color: Theme.accent) {
                 Task { await exportFile() }
             }
             Text(tr("احفظه في iCloud Drive أو أي مكان. ينفتح بكلمة السر أو مفتاح الاسترجاع.", "Save it to iCloud Drive or anywhere. Opens with your password or recovery key."))
@@ -574,7 +649,6 @@ struct BackupView: View {
 
             if let error { Text(error).font(Theme.font(14, .semibold)).foregroundStyle(Theme.danger) }
         }
-        .onAppear { autoBackup = state.autoBackup }
         .sheet(isPresented: Binding(get: { exportURL != nil }, set: { if !$0 { cleanupExport() } })) {
             if let exportURL { ShareSheet(items: [exportURL]) }
         }
@@ -596,38 +670,22 @@ struct BackupView: View {
         do {
             try await sb.verifyEmailCode(email: email, code: code)
             if var p = state.profile, !p.emailVerified { p.emailVerified = true; state.profile = p; state.saveProfile() }
-            FX.success()
+            Haptics.success()
             error = nil
             state.objectWillChange.send()
+            await state.backupNow()
         } catch { self.error = error.localizedDescription; FX.error() }
-    }
-
-    private func cloudBackup() async {
-        loading = true
-        defer { loading = false }
-        state.busy = tr("نشفّر ونرفع…", "Encrypting & uploading…")
-        do {
-            let skipped = try await state.backupToCloud()
-            state.busy = nil
-            state.show(skipped > 0 ? tr("تم ✓ (تخطّينا \(skipped) ملف كبير)", "Done ✓ (skipped \(skipped) large files)") : tr("تم النسخ للسحابة ✓", "Backed up to cloud ✓"),
-                       icon: "icloud.fill")
-            error = nil
-        } catch {
-            state.busy = nil
-            self.error = error.localizedDescription
-            FX.error()
-        }
     }
 
     private func exportFile() async {
         state.busy = tr("نجهّز النسخة الكاملة…", "Preparing full backup…")
         defer { state.busy = nil }
         do {
-            let (data, _) = try await state.makeBackup(maxFileSize: nil)
+            let data = try await state.makeBackup(includeFiles: true)
             let f = DateFormatter()
             f.locale = Locale(identifier: "en_US_POSIX")
             f.dateFormat = "yyyy-MM-dd"
-            let url = FileManager.default.temporaryDirectory.appendingPathComponent("MNLOVO-AYN-\(f.string(from: Date())).ayn")
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent("MNLOVO-SAVER-\(f.string(from: Date())).saver")
             try data.write(to: url, options: [.atomic, .completeFileProtection])
             exportURL = url
         } catch {
