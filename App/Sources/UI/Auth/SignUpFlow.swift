@@ -20,6 +20,8 @@ struct SignUpFlow: View {
     @State private var showCloudSetup = false
     @State private var passcodeDone = false
     @State private var duressConfirm = ""
+    @State private var phoneHints: [String] = []
+    @State private var showPhoneWarning = false
     @FocusState private var focus: AYNFieldID?
 
     private let totalSteps = 8
@@ -96,6 +98,14 @@ struct SignUpFlow: View {
         }
         .sheet(isPresented: $showCloudSetup) { CloudSetupView().environmentObject(state) }
         .onChange(of: step) { _, _ in error = nil }
+        .confirmationDialog(tr("في حساب ثاني على نفس الرقم", "Another account uses this number"),
+                            isPresented: $showPhoneWarning, titleVisibility: .visible) {
+            Button(tr("إيه، كمّل", "Yes, continue")) { go(1) }
+            Button(tr("لا، رجوع", "No, go back"), role: .cancel) { }
+        } message: {
+            Text(tr("رقم الجوال هذا مسجّل مع: \(phoneHints.joined(separator: "، ")). تبي تكمّل وتسوي حساب جديد؟",
+                    "This number is already linked to: \(phoneHints.joined(separator: ", ")). Continue with a new account?"))
+        }
     }
 
     private var nextTitle: String {
@@ -135,7 +145,7 @@ struct SignUpFlow: View {
         switch step {
         case 0:
             input.totp.account = input.username.trimmingCharacters(in: .whitespaces)
-            go(1)
+            Task { await checkRegistry() }
         case 1:
             go(2)
         case 2:
@@ -342,7 +352,7 @@ struct SignUpFlow: View {
             toggleRow(icon: "bell.badge.fill", title: tr("الإشعارات", "Notifications"),
                       sub: tr("عشان تذكيراتك توصلك", "So your reminders reach you"), isOn: $notifications)
             toggleRow(icon: "camera.metering.spot", title: tr("تصوير المتطفل", "Intruder photo"),
-                      sub: tr("بعد ٣ محاولات خاطئة تلتقط الكاميرا الأمامية صورة", "After 3 wrong attempts the front camera takes a photo"),
+                      sub: tr("من ثاني محاولة خاطئة تلتقط الكاميرا الأمامية صورة", "From the 2nd wrong attempt the front camera takes a photo"),
                       isOn: $intruder)
         }
     }
@@ -362,6 +372,27 @@ struct SignUpFlow: View {
     }
 
     // MARK: Actions
+
+    /// One account per email; if the phone already has another account, ask before continuing.
+    private func checkRegistry() async {
+        loading = true
+        let check = await sb.checkSignup(email: input.email.trimmingCharacters(in: .whitespaces), phone: input.phone)
+        loading = false
+        guard let check else { go(1); return }
+        if check.emailTaken {
+            FX.error()
+            error = tr("هذا الإيميل مسجّل بحساب ثاني. استخدم «عندي حساب، تسجيل دخول» أو إيميل ثاني.",
+                       "This email already has an account. Use “I have an account, sign in” or another email.")
+            return
+        }
+        if !check.phoneHints.isEmpty {
+            phoneHints = check.phoneHints
+            Haptics.warning()
+            showPhoneWarning = true
+            return
+        }
+        go(1)
+    }
 
     private func sendEmail() async {
         guard resendIn == 0 else { return }
@@ -406,7 +437,6 @@ struct SignUpFlow: View {
         do {
             try await state.createAccount(n)
             state.busy = nil
-            state.show(tr("أهلاً \(n.username)! خزنتك جاهزة 🎉", "Welcome \(n.username)! Your vault is ready 🎉"), icon: "sparkles")
         } catch {
             state.busy = nil
             self.error = error.localizedDescription

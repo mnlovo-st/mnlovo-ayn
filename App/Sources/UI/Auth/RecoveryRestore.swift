@@ -302,7 +302,6 @@ struct RestoreView: View {
         do {
             try await state.restore(backup, secret: secret)
             state.busy = nil
-            state.show(tr("أهلاً من جديد ✓ رجعت بياناتك", "Welcome back ✓ your data is restored"))
             dismiss()
         } catch {
             state.busy = nil

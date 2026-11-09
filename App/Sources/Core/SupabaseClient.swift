@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 /// Minimal Supabase client (free plan): email one-time codes + encrypted backup storage.
 /// The server never sees your data in clear — backups are encrypted on the phone first.
@@ -151,7 +152,50 @@ final class SupabaseClient {
 
     func signOut() { session = nil }
 
-    // MARK: Backup storage (bucket "backups", path <user-id>/vault.ayn)
+    // MARK: Account registry (one account per email; warn when a phone is shared)
+
+    struct SignupCheck {
+        var emailTaken: Bool
+        var phoneHints: [String]
+    }
+
+    static func phoneHash(_ phone: String) -> String {
+        let digits = TOTP.westernDigits(phone).filter { $0.isASCII && $0.isNumber }
+        let data = Data("saver|\(digits.suffix(9))".utf8)
+        return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// "mnloae@gmail.com" → "m••••e@gmail.com"
+    static func emailHint(_ email: String) -> String {
+        let e = email.trimmingCharacters(in: .whitespaces).lowercased()
+        guard let at = e.firstIndex(of: "@") else { return e }
+        let local = String(e[..<at])
+        let domain = String(e[at...])
+        guard let first = local.first, let last = local.last else { return e }
+        let mid = String(repeating: "•", count: max(2, min(6, local.count - 2)))
+        return local.count <= 2 ? "\(first)•\(domain)" : "\(first)\(mid)\(last)\(domain)"
+    }
+
+    /// nil when the check isn't available (offline, or registry.sql not run yet) — sign-up then continues.
+    func checkSignup(email: String, phone: String) async -> SignupCheck? {
+        guard isConfigured,
+              let result = try? await request("/rest/v1/rpc/saver_check_signup",
+                                              json: ["p_email": email.lowercased(), "p_phone_hash": Self.phoneHash(phone)]),
+              (200..<300).contains(result.1.statusCode),
+              let obj = try? JSONSerialization.jsonObject(with: result.0) as? [String: Any] else { return nil }
+        return SignupCheck(emailTaken: obj["email_taken"] as? Bool ?? false,
+                           phoneHints: obj["phone_hints"] as? [String] ?? [])
+    }
+
+    func registerAccount(email: String, phone: String) async {
+        guard let s = try? await validSession() else { return }
+        let body: [String: Any] = ["user_id": s.userID, "email": email.lowercased(),
+                                   "phone_hash": Self.phoneHash(phone), "email_hint": Self.emailHint(email)]
+        _ = try? await request("/rest/v1/saver_accounts?on_conflict=user_id", json: body, bearer: s.accessToken,
+                               headers: ["Prefer": "resolution=merge-duplicates,return=minimal"])
+    }
+
+    // MARK: Backup storage (bucket "backups", path <user-id>/vault.saver)
 
     func uploadBackup(_ data: Data) async throws {
         let s = try await validSession()

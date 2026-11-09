@@ -83,6 +83,7 @@ final class AppState: ObservableObject {
     @Published var busy: String?
     @Published var newIntrusions = 0
     @Published var syncing = false
+    @Published var celebration: Celebration?
     @Published var syncError: String?
 
     private var masterKey: SymmetricKey?
@@ -219,6 +220,9 @@ final class AppState: ObservableObject {
         defaults.set(true, forKey: "backup.dirty")
         openVault(.real, key: mk, profile: prof)
         if !n.duressPassword.isEmpty { try? await setupDuress(password: n.duressPassword) }
+        Task { await SupabaseClient.shared.registerAccount(email: n.email, phone: n.phone) }
+        celebration = Celebration(title: tr("أهلاً \(n.username)! 🎉", "Welcome, \(n.username)! 🎉"),
+                                  subtitle: tr("حسابك جاهز ومحمي بالكامل", "Your account is ready and fully protected"))
     }
 
     // MARK: - Unlock
@@ -291,7 +295,7 @@ final class AppState: ObservableObject {
             let delay = min(900, 30 * pow(2, Double(n - 5)))
             defaults.set(Date().timeIntervalSince1970 + delay, forKey: "sec.lockUntil")
         }
-        if n >= 3 {
+        if n >= 2 {
             IntruderCam.shared.capture { photo in
                 VaultStorage.writeInbox(IntruderEvent(reason: reason, photo: photo))
             }
@@ -562,8 +566,10 @@ final class AppState: ObservableObject {
         if let i = accounts.firstIndex(where: { $0.id == item.id }) {
             if accounts[i].password != item.password { u.passwordChanged = Date() }
             accounts[i] = u
+            TelegramService.shared.post(.accountUpdated(u), space: space)
         } else {
             accounts.insert(u, at: 0)
+            TelegramService.shared.post(.accountAdded(u), space: space)
         }
         persist(accounts, "accounts.enc")
     }
@@ -585,7 +591,13 @@ final class AppState: ObservableObject {
     func upsert(_ note: SecureNote) {
         var u = note
         u.updated = Date()
-        if let i = notes.firstIndex(where: { $0.id == note.id }) { notes[i] = u } else { notes.insert(u, at: 0) }
+        if let i = notes.firstIndex(where: { $0.id == note.id }) {
+            notes[i] = u
+            TelegramService.shared.post(.noteUpdated(u), space: space)
+        } else {
+            notes.insert(u, at: 0)
+            TelegramService.shared.post(.noteAdded(u), space: space)
+        }
         persist(notes, "notes.enc")
     }
 
@@ -606,8 +618,10 @@ final class AppState: ObservableObject {
         try await Task.detached(priority: .userInitiated) { try AYNCrypto.encryptFile(from: url, to: dst, key: mk) }.value
         let thumb = await MediaTools.thumbnail(for: url, kind: k)
         let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value ?? 0
-        files.insert(VaultFile(id: id, name: name, kind: k, size: size, sensitivity: sensitivity,
-                               thumbnail: thumb, ocrText: ocrText), at: 0)
+        let vf = VaultFile(id: id, name: name, kind: k, size: size, sensitivity: sensitivity,
+                           thumbnail: thumb, ocrText: ocrText)
+        files.insert(vf, at: 0)
+        TelegramService.shared.post(.fileAdded(vf), space: space)
         persist(files, "files.enc")
     }
 
@@ -646,7 +660,15 @@ final class AppState: ObservableObject {
     // MARK: - Reminders
 
     func upsert(_ r: Reminder) {
-        if let i = reminders.firstIndex(where: { $0.id == r.id }) { reminders[i] = r } else { reminders.append(r) }
+        if let i = reminders.firstIndex(where: { $0.id == r.id }) {
+            let wasDone = reminders[i].done
+            reminders[i] = r
+            if r.done && !wasDone { TelegramService.shared.post(.reminderDone(r), space: space) }
+            else if !r.done { TelegramService.shared.post(.reminderUpdated(r), space: space) }
+        } else {
+            reminders.append(r)
+            TelegramService.shared.post(.reminderAdded(r), space: space)
+        }
         saveReminders()
     }
 
@@ -771,6 +793,10 @@ final class AppState: ObservableObject {
             try? SecureEnclaveVault.enroll(masterKey: mk, space: .real)
         }
         openVault(.real, key: mk, profile: payload.profile)
+        let p = payload.profile
+        Task { await SupabaseClient.shared.registerAccount(email: p.email, phone: p.phone) }
+        celebration = Celebration(title: tr("أهلاً من جديد \(payload.profile.username)! 🎉", "Welcome back, \(payload.profile.username)! 🎉"),
+                                  subtitle: tr("رجعت بياناتك كلها", "All your data is back"))
     }
 
     var lastBackup: Date? {

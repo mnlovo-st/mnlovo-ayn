@@ -3,64 +3,86 @@ import SwiftUI
 struct IntroView: View {
     var onFinish: () -> Void
 
+    @State private var drawn: CGFloat = 0
+    @State private var showEye = false
     @State private var mood: EyeMood = .closed
+    @State private var flash = false
+    @State private var rings = false
     @State private var letters = 0
+    @State private var shimmer: CGFloat = -1.2
     @State private var showSaver = false
-    @State private var showFooter = false
-    @State private var ring = false
-    @State private var ring2 = false
-    @State private var lineWidth: CGFloat = 0
+    @State private var saverTracking: CGFloat = 2
+    @State private var dust = false
+    @State private var zoom = false
     @State private var finished = false
     private let word = Array("MNLOVO")
 
     var body: some View {
-        VStack(spacing: 22) {
-            Spacer()
-            ZStack {
-                Circle().stroke(Theme.brandGradient, lineWidth: 1.5)
-                    .frame(width: 230, height: 230)
-                    .scaleEffect(ring ? 1.6 : 0.45)
-                    .opacity(ring ? 0 : 0.9)
-                Circle().stroke(Theme.accent.opacity(0.5), lineWidth: 1)
-                    .frame(width: 230, height: 230)
-                    .scaleEffect(ring2 ? 2.0 : 0.45)
-                    .opacity(ring2 ? 0 : 0.6)
-                EyeView(mood: mood, size: 190)
-            }
-            .frame(height: 210)
+        ZStack {
+            RadialGradient(colors: [Color.clear, Color.black.opacity(0.65)], center: .center, startRadius: 120, endRadius: 520)
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+            StarDust().opacity(dust ? 1 : 0)
 
-            VStack(spacing: 10) {
-                HStack(spacing: 6) {
-                    ForEach(0..<word.count, id: \.self) { i in
-                        Text(String(word[i]))
-                            .font(Theme.font(40, .black))
-                            .foregroundStyle(Theme.brandGradient)
-                            .opacity(i < letters ? 1 : 0)
-                            .offset(y: i < letters ? 0 : 18)
-                            .blur(radius: i < letters ? 0 : 10)
-                            .scaleEffect(i < letters ? 1 : 0.85)
+            VStack(spacing: 26) {
+                Spacer()
+                ZStack {
+                    Circle()
+                        .fill(RadialGradient(colors: [Color.white.opacity(0.9), Theme.accent.opacity(0.4), .clear],
+                                             center: .center, startRadius: 0, endRadius: 160))
+                        .frame(width: 320, height: 320)
+                        .scaleEffect(flash ? 1.3 : 0.2)
+                        .opacity(flash ? 0 : 0.95)
+                    ForEach(0..<3, id: \.self) { i in
+                        Circle().stroke(i == 1 ? AnyShapeStyle(Theme.accent.opacity(0.6)) : AnyShapeStyle(Theme.brandGradient), lineWidth: 1.2)
+                            .frame(width: 220, height: 220)
+                            .scaleEffect(rings ? 1.5 + CGFloat(i) * 0.35 : 0.4)
+                            .opacity(rings ? 0 : 0.9)
+                            .animation(.easeOut(duration: 1.4 + Double(i) * 0.25).delay(Double(i) * 0.12), value: rings)
                     }
+                    EyeOpening(top: 1, bottom: 1, tilt: 0)
+                        .trim(from: 0, to: drawn)
+                        .stroke(Theme.brandGradient, style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
+                        .frame(width: 210, height: 126)
+                        .shadow(color: Theme.accent.opacity(0.9), radius: 10)
+                        .opacity(showEye ? 0 : 1)
+                    EyeView(mood: mood, size: 210)
+                        .opacity(showEye ? 1 : 0)
+                        .scaleEffect(showEye ? 1 : 0.92)
                 }
-                Capsule()
-                    .fill(Theme.brandGradient)
-                    .frame(width: lineWidth, height: 2)
-                    .shadow(color: Theme.accent.opacity(0.8), radius: 6)
-                Text("S A V E R")
-                    .font(Theme.font(18, .semibold))
-                    .tracking(6)
-                    .foregroundStyle(Theme.text.opacity(0.85))
-                    .opacity(showSaver ? 1 : 0)
-                    .offset(y: showSaver ? 0 : 8)
-            }
-            .environment(\.layoutDirection, .leftToRight)
+                .frame(height: 210)
 
-            Spacer()
-            VStack(spacing: 6) {
-                Text(tr("اضغط للتخطي", "Tap to skip")).font(Theme.font(12)).foregroundStyle(Theme.faint)
-                Text(Brand.copyright).font(Theme.font(11, .bold)).foregroundStyle(Theme.faint)
+                VStack(spacing: 12) {
+                    wordmark
+                        .overlay {
+                            GeometryReader { g in
+                                LinearGradient(colors: [.clear, .white.opacity(0.9), .clear], startPoint: .leading, endPoint: .trailing)
+                                    .frame(width: g.size.width * 0.35)
+                                    .offset(x: shimmer * g.size.width)
+                            }
+                            .mask(wordmark)
+                            .allowsHitTesting(false)
+                        }
+                    Text("SAVER")
+                        .font(Theme.font(17, .semibold))
+                        .tracking(saverTracking)
+                        .foregroundStyle(Theme.text.opacity(0.85))
+                        .opacity(showSaver ? 1 : 0)
+                        .blur(radius: showSaver ? 0 : 6)
+                }
+                .environment(\.layoutDirection, .leftToRight)
+
+                Spacer()
+                VStack(spacing: 6) {
+                    Text(tr("اضغط للتخطي", "Tap to skip")).font(Theme.font(12)).foregroundStyle(Theme.faint)
+                    Text(Brand.copyright).font(Theme.font(11, .bold)).foregroundStyle(Theme.faint)
+                }
+                .opacity(dust ? 1 : 0)
+                .padding(.bottom, 18)
             }
-            .opacity(showFooter ? 1 : 0)
-            .padding(.bottom, 18)
+            .scaleEffect(zoom ? 5 : 1)
+            .opacity(zoom ? 0 : 1)
+            .blur(radius: zoom ? 12 : 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentShape(Rectangle())
@@ -68,27 +90,44 @@ struct IntroView: View {
         .task { await run() }
     }
 
+    private var wordmark: some View {
+        HStack(spacing: 6) {
+            ForEach(0..<word.count, id: \.self) { i in
+                Text(String(word[i]))
+                    .font(Theme.font(42, .black))
+                    .foregroundStyle(Theme.brandGradient)
+                    .opacity(i < letters ? 1 : 0)
+                    .offset(y: i < letters ? 0 : 20)
+                    .blur(radius: i < letters ? 0 : 10)
+                    .scaleEffect(i < letters ? 1 : 0.7)
+            }
+        }
+    }
+
+    // Timed to the intro sound: the eye blooms open on the low hit, letters land on the plucks.
     private func run() async {
         SoundFX.shared.play(.intro, volume: 0.75)
-        withAnimation(.easeIn(duration: 0.6)) { showFooter = true }
+        withAnimation(.easeIn(duration: 0.8)) { dust = true }
+        withAnimation(.easeInOut(duration: 0.5)) { drawn = 1 }
         await pause(0.5)
-        withAnimation(.spring(response: 0.75, dampingFraction: 0.62)) { mood = .surprised }
         Haptics.tap(.heavy)
-        withAnimation(.easeOut(duration: 1.4)) { ring = true }
-        withAnimation(.easeOut(duration: 1.9).delay(0.15)) { ring2 = true }
-        await pause(0.3)
-        withAnimation(.spring(response: 0.5)) { mood = .idle }
+        withAnimation(.easeOut(duration: 0.9)) { flash = true }
+        rings = true
+        withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) { showEye = true; mood = .surprised }
+        await pause(0.22)
         for i in 1...word.count {
-            withAnimation(.spring(response: 0.5, dampingFraction: 0.72)) { letters = i }
+            withAnimation(.spring(response: 0.45, dampingFraction: 0.68)) { letters = i }
+            if i == 2 { withAnimation(.spring(response: 0.5)) { mood = .idle } }
             Haptics.soft(0.25)
             await pause(0.085)
         }
-        withAnimation(.easeOut(duration: 0.55)) { lineWidth = 150 }
-        await pause(0.2)
-        withAnimation(.spring(response: 0.6)) { showSaver = true }
-        await pause(0.4)
+        withAnimation(.easeInOut(duration: 0.9)) { shimmer = 1.2 }
+        withAnimation(.easeOut(duration: 0.9)) { showSaver = true; saverTracking = 10 }
+        await pause(0.5)
         withAnimation { mood = .happy }
-        await pause(0.95)
+        await pause(0.85)
+        withAnimation(.easeIn(duration: 0.45)) { zoom = true }
+        await pause(0.4)
         finish()
     }
 
@@ -96,6 +135,33 @@ struct IntroView: View {
         guard !finished else { return }
         finished = true
         onFinish()
+    }
+}
+
+/// Slowly drifting specks of light behind the intro.
+struct StarDust: View {
+    private struct Speck { var x: CGFloat; var y: CGFloat; var r: CGFloat; var speed: CGFloat; var phase: Double }
+    @State private var specks: [Speck] = (0..<46).map { _ in
+        Speck(x: .random(in: 0...1), y: .random(in: 0...1), r: .random(in: 0.6...2.2),
+              speed: .random(in: 0.004...0.016), phase: .random(in: 0...6.28))
+    }
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { ctx in
+            let t = ctx.date.timeIntervalSinceReferenceDate
+            Canvas { g, size in
+                for s in specks {
+                    let y = (s.y - CGFloat(t) * s.speed).truncatingRemainder(dividingBy: 1)
+                    let yy = (y < 0 ? y + 1 : y) * size.height
+                    let xx = s.x * size.width + CGFloat(sin(t * 0.4 + s.phase)) * 8
+                    let a = 0.25 + 0.45 * (0.5 + 0.5 * sin(t * 1.3 + s.phase))
+                    let rect = CGRect(x: xx - s.r, y: yy - s.r, width: s.r * 2, height: s.r * 2)
+                    g.fill(Path(ellipseIn: rect), with: .color(Theme.accent.opacity(a)))
+                }
+            }
+        }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
     }
 }
 

@@ -81,6 +81,13 @@ struct RootView: View {
             }
 
             ToastHost().zIndex(70)
+
+            if let c = state.celebration {
+                CelebrationOverlay(celebration: c) { withAnimation { state.celebration = nil } }
+                    .id(c.id)
+                    .zIndex(80)
+                    .transition(.opacity)
+            }
         }
         .animation(.easeInOut(duration: 0.25), value: state.privacyCover)
         .onChange(of: scenePhase) { _, newValue in state.scenePhaseChanged(newValue) }

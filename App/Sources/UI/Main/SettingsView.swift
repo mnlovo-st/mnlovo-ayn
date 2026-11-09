@@ -17,7 +17,7 @@ struct SettingsView: View {
     @State private var bioOn = false
 
     enum SettingsSheet: String, Identifiable {
-        case password, section, twoFA, recovery, duress, intruders, cloudSetup, backup
+        case password, section, twoFA, recovery, duress, intruders, cloudSetup, backup, telegram
         var id: String { rawValue }
     }
 
@@ -61,7 +61,7 @@ struct SettingsView: View {
                         rowLabel("timer", tr("يقفل إذا طلعت من التطبيق", "Locks after leaving the app"), value: lockLabel(state.autoLockSeconds))
                     }
                     divider
-                    toggleRow("camera.metering.spot", tr("تصوير المتطفل (٣ محاولات)", "Intruder photo (3 attempts)"), $intruder)
+                    toggleRow("camera.metering.spot", tr("تصوير المتطفل (من ثاني محاولة)", "Intruder photo (from 2nd attempt)"), $intruder)
                         .onChange(of: intruder) { _, v in
                             if v { Task { intruder = await IntruderCam.requestPermission() } }
                         }
@@ -85,6 +85,14 @@ struct SettingsView: View {
                         divider
                         row("cloud.fill", tr("إعداد السحابة", "Cloud setup"),
                             value: SupabaseClient.shared.isConfigured ? tr("جاهز", "Ready") : tr("غير مُعد", "Not set")) { sheet = .cloudSetup }
+                    }
+                }
+
+                if !state.isDecoy {
+                    group(tr("الربط", "Integrations"), "point.3.connected.trianglepath.dotted") {
+                        row("paperplane.fill", tr("نسخة تلقائية في تيليجرام", "Auto-post to Telegram"),
+                            value: TelegramService.shared.isReady ? tr("مفعّلة", "On") : tr("مطفأة", "Off"),
+                            tint: Color(hex: 0x2AABEE)) { sheet = .telegram }
                     }
                 }
 
@@ -145,6 +153,7 @@ struct SettingsView: View {
                 case .intruders: IntruderLogView()
                 case .cloudSetup: CloudSetupView()
                 case .backup: BackupView()
+                case .telegram: TelegramSetupView()
                 }
             }
             .environmentObject(state)
@@ -507,8 +516,10 @@ struct IntruderLogView: View {
                     } label: {
                         HStack(spacing: 12) {
                             if let d = e.photo, let img = UIImage(data: d) {
-                                Image(uiImage: img).resizable().scaledToFill()
-                                    .frame(width: 64, height: 64).clipShape(RoundedRectangle(cornerRadius: 14))
+                                Image(uiImage: img).resizable().scaledToFit()
+                                    .frame(width: 64, height: 64)
+                                    .background(Color.black)
+                                    .clipShape(RoundedRectangle(cornerRadius: 14))
                                     .overlay(alignment: .bottomTrailing) {
                                         Image(systemName: "arrow.up.left.and.arrow.down.right")
                                             .font(.system(size: 9, weight: .bold)).foregroundStyle(.white)
@@ -556,38 +567,70 @@ enum IntruderStamp {
         return f.string(from: d)
     }
 
+    /// Security-camera style: always Western digits, 24h clock, seconds.
+    static func cctvDate(_ d: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd  HH:mm:ss"
+        return f.string(from: d)
+    }
+
+    /// Full, uncropped photo with a CCTV overlay: "● REC" top-left, app name + date/time bottom-left.
     static func stamped(_ img: UIImage, event: IntruderEvent) -> UIImage {
-        let w = img.size.width
-        let band = max(90, w * 0.2)
-        let size = CGSize(width: w, height: img.size.height + band)
+        let size = img.size
         let format = UIGraphicsImageRendererFormat()
         format.scale = img.scale
-        let renderer = UIGraphicsImageRenderer(size: size, format: format)
-        return renderer.image { ctx in
-            img.draw(in: CGRect(origin: .zero, size: img.size))
-            let bandRect = CGRect(x: 0, y: img.size.height, width: w, height: band)
-            UIColor(red: 0.024, green: 0.027, blue: 0.047, alpha: 1).setFill()
-            ctx.fill(bandRect)
-            let colors = [UIColor(red: 0.22, green: 0.9, blue: 0.78, alpha: 1).cgColor,
-                          UIColor(red: 0.48, green: 0.42, blue: 1, alpha: 1).cgColor] as CFArray
-            if let g = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 1]) {
-                ctx.cgContext.saveGState()
-                ctx.cgContext.clip(to: CGRect(x: 0, y: img.size.height, width: w, height: max(3, band * 0.04)))
-                ctx.cgContext.drawLinearGradient(g, start: CGPoint(x: 0, y: 0), end: CGPoint(x: w, y: 0), options: [])
-                ctx.cgContext.restoreGState()
+        return UIGraphicsImageRenderer(size: size, format: format).image { ctx in
+            img.draw(in: CGRect(origin: .zero, size: size))
+            let unit = max(size.width, size.height) / 40
+            let mono = UIFont.monospacedSystemFont(ofSize: unit * 1.05, weight: .bold)
+            let shadow = NSShadow()
+            shadow.shadowColor = UIColor.black.withAlphaComponent(0.85)
+            shadow.shadowBlurRadius = unit * 0.25
+            shadow.shadowOffset = CGSize(width: 0, height: unit * 0.06)
+            func draw(_ text: String, color: UIColor, at p: CGPoint) {
+                NSAttributedString(string: text, attributes: [.font: mono, .foregroundColor: color, .shadow: shadow,
+                                                              .strokeColor: UIColor.black.withAlphaComponent(0.6),
+                                                              .strokeWidth: -2.5]).draw(at: p)
             }
-            let titleFont = UIFont(name: FontBook.name(for: .heavy) ?? "", size: band * 0.24) ?? .boldSystemFont(ofSize: band * 0.24)
-            let subFont = UIFont(name: FontBook.name(for: .medium) ?? "", size: band * 0.15) ?? .systemFont(ofSize: band * 0.15)
-            let para = NSMutableParagraphStyle()
-            para.alignment = .center
-            let title = NSAttributedString(string: Brand.appName, attributes: [
-                .font: titleFont, .foregroundColor: UIColor(red: 0.22, green: 0.9, blue: 0.78, alpha: 1),
-                .kern: band * 0.02, .paragraphStyle: para])
-            let sub = NSAttributedString(string: "\(event.title) · \(exactDate(event.date))", attributes: [
-                .font: subFont, .foregroundColor: UIColor(white: 0.85, alpha: 1), .paragraphStyle: para])
-            title.draw(in: CGRect(x: 8, y: img.size.height + band * 0.18, width: w - 16, height: band * 0.36))
-            sub.draw(in: CGRect(x: 8, y: img.size.height + band * 0.56, width: w - 16, height: band * 0.36))
+            let pad = unit * 0.9
+            // top-left: recording dot
+            UIColor(red: 1, green: 0.2, blue: 0.25, alpha: 1).setFill()
+            ctx.cgContext.fillEllipse(in: CGRect(x: pad, y: pad + unit * 0.2, width: unit * 0.75, height: unit * 0.75))
+            draw("REC", color: .white, at: CGPoint(x: pad + unit * 1.1, y: pad))
+            // bottom-left: app name + date/time
+            draw("\(Brand.appName)  CAM-01", color: .white, at: CGPoint(x: pad, y: size.height - pad - unit * 2.6))
+            draw(cctvDate(event.date), color: UIColor(red: 0.22, green: 0.9, blue: 0.78, alpha: 1),
+                 at: CGPoint(x: pad, y: size.height - pad - unit * 1.3))
         }
+    }
+}
+
+/// The same overlay drawn live on screen.
+struct CCTVOverlay: View {
+    var date: Date
+    var body: some View {
+        GeometryReader { g in
+            let unit = max(g.size.width, g.size.height) / 40
+            ZStack(alignment: .topLeading) {
+                HStack(spacing: unit * 0.35) {
+                    Circle().fill(Color(red: 1, green: 0.2, blue: 0.25)).frame(width: unit * 0.75, height: unit * 0.75)
+                    Text("REC")
+                }
+                .padding(unit * 0.9)
+                VStack(alignment: .leading, spacing: unit * 0.15) {
+                    Text("\(Brand.appName)  CAM-01")
+                    Text(IntruderStamp.cctvDate(date)).foregroundStyle(Theme.accent)
+                }
+                .padding(unit * 0.9)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+            }
+            .font(.system(size: unit * 1.05, weight: .bold, design: .monospaced))
+            .foregroundStyle(.white)
+            .shadow(color: .black.opacity(0.9), radius: 2, y: 1)
+        }
+        .environment(\.layoutDirection, .leftToRight)
+        .allowsHitTesting(false)
     }
 }
 
@@ -616,26 +659,18 @@ struct IntruderPhotoViewer: View {
 
                 Spacer(minLength: 10)
                 if let img = image {
-                    VStack(spacing: 0) {
-                        Image(uiImage: img)
-                            .resizable()
-                            .scaledToFit()
-                            .scaleEffect(scale)
-                            .gesture(MagnifyGesture().onChanged { v in scale = max(1, min(4, v.magnification)) }
-                                .onEnded { _ in withAnimation(.spring) { scale = 1 } })
-                        VStack(spacing: 4) {
-                            Rectangle().fill(Theme.gradient).frame(height: 3)
-                            Text(Brand.appName).font(Theme.font(20, .heavy)).foregroundStyle(Theme.accent).tracking(1.5)
-                                .padding(.top, 8)
-                            Text(IntruderStamp.exactDate(event.date))
-                                .font(Theme.font(14, .medium)).foregroundStyle(.white.opacity(0.85))
-                                .padding(.bottom, 12)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .background(Theme.bg)
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: 18))
-                    .padding(.horizontal, 16)
+                    Image(uiImage: img)
+                        .resizable()
+                        .scaledToFit()
+                        .overlay { CCTVOverlay(date: event.date) }
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .scaleEffect(scale)
+                        .gesture(MagnifyGesture().onChanged { v in scale = max(1, min(4, v.magnification)) }
+                            .onEnded { _ in withAnimation(.spring) { scale = 1 } })
+                        .padding(.horizontal, 12)
+                    Text(IntruderStamp.exactDate(event.date))
+                        .font(Theme.font(13, .medium)).foregroundStyle(.white.opacity(0.75))
+                        .padding(.top, 10)
                 }
                 Spacer(minLength: 10)
 

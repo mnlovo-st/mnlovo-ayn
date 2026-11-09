@@ -131,7 +131,8 @@ final class IntruderCam: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate 
             guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front),
                   let input = try? AVCaptureDeviceInput(device: device) else { done(nil); return }
             let s = AVCaptureSession()
-            s.sessionPreset = .medium
+            // Full 4:3 sensor frame (no crop) so the whole face and surroundings are visible.
+            s.sessionPreset = s.canSetSessionPreset(.photo) ? .photo : .high
             guard s.canAddInput(input) else { done(nil); return }
             s.addInput(input)
             let out = AVCaptureVideoDataOutput()
@@ -154,10 +155,15 @@ final class IntruderCam: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate 
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
         guard !finished, Date().timeIntervalSince(started) > 0.8,
               let pb = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
-        let ci = CIImage(cvPixelBuffer: pb).oriented(.upMirrored)
+        var ci = CIImage(cvPixelBuffer: pb).oriented(.upMirrored)
+        let longSide = max(ci.extent.width, ci.extent.height)
+        if longSide > 1600 {
+            let k = 1600 / longSide
+            ci = ci.transformed(by: CGAffineTransform(scaleX: k, y: k))
+        }
         let ctx = CIContext()
         guard let cg = ctx.createCGImage(ci, from: ci.extent) else { return }
-        finish(UIImage(cgImage: cg).jpegData(compressionQuality: 0.6))
+        finish(UIImage(cgImage: cg).jpegData(compressionQuality: 0.8))
     }
 
     private func finish(_ data: Data?) {

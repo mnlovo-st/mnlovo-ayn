@@ -28,3 +28,5 @@ create policy "ayn_backups_update_own" on storage.objects
 create policy "ayn_backups_delete_own" on storage.objects
   for delete to authenticated
   using (bucket_id = 'backups' and (storage.foldername(name))[1] = auth.uid()::text);
+
+-- Account registry (unique email, shared-phone warning): see supabase/registry.sql
