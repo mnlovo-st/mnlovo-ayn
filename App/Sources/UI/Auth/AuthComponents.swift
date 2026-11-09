@@ -21,6 +21,7 @@ struct PasswordCreator: View {
     var eyeSize: CGFloat = 150
     var titleFirst = tr("كلمة السر", "Password")
     var titleSecond = tr("أكّد كلمة السر", "Confirm password")
+    var showEye = true
 
     static func mood(password: String, confirm: String, focused: AYNFieldID?, first: AYNFieldID, second: AYNFieldID) -> EyeMood {
         let progress = CGFloat(confirm.count) / CGFloat(max(password.count, 1))
@@ -40,7 +41,9 @@ struct PasswordCreator: View {
         Self.mood(password: password, confirm: confirm, focused: focus.wrappedValue, first: firstID, second: secondID)
     }
 
-    private var caption: String {
+    private var caption: String { Self.caption(for: mood) }
+
+    static func caption(for mood: EyeMood) -> String {
         switch mood {
         case .lookUp: return tr("ما أطالع 🙈 اكتب براحتك", "Not looking 🙈 type away")
         case .reading: return tr("قاعد أتحقق منها حرف حرف…", "Checking it letter by letter…")
@@ -53,13 +56,15 @@ struct PasswordCreator: View {
 
     var body: some View {
         VStack(spacing: 14) {
-            EyeView(mood: mood, size: eyeSize, sounds: true)
-                .frame(height: eyeSize * 0.9)
-            Text(caption)
-                .font(Theme.font(15, .semibold))
-                .foregroundStyle(Theme.sub)
-                .contentTransition(.opacity)
-                .animation(.easeInOut, value: caption)
+            if showEye {
+                EyeView(mood: mood, size: eyeSize, sounds: true)
+                    .frame(height: eyeSize * 0.9)
+                Text(caption)
+                    .font(Theme.font(15, .semibold))
+                    .foregroundStyle(Theme.sub)
+                    .contentTransition(.opacity)
+                    .animation(.easeInOut, value: caption)
+            }
 
             AYNField(title: titleFirst, icon: "key.fill", text: $password, secure: true,
                      contentType: .newPassword, focus: focus, id: firstID) { focus.wrappedValue = secondID }
@@ -74,10 +79,10 @@ struct PasswordCreator: View {
 
     private var requirements: some View {
         let items: [(String, Bool)] = [
-            (tr("١٠ أحرف أو أكثر", "10+ characters"), password.count >= 10),
-            (tr("حرف كبير وصغير", "Upper & lower"), password.contains(where: { $0.isUppercase }) && password.contains(where: { $0.isLowercase })),
-            (tr("رقم", "A number"), password.contains(where: { $0.isNumber })),
-            (tr("رمز", "A symbol"), password.contains(where: { !$0.isLetter && !$0.isNumber }))
+            (tr("٦ أحرف أو أكثر (مطلوب)", "6+ characters (required)"), password.count >= 6),
+            (tr("حرف كبير وصغير (يقوّيها)", "Upper & lower (stronger)"), password.contains(where: { $0.isUppercase }) && password.contains(where: { $0.isLowercase })),
+            (tr("رقم (يقوّيها)", "A number (stronger)"), password.contains(where: { $0.isNumber })),
+            (tr("رمز (يقوّيها)", "A symbol (stronger)"), password.contains(where: { !$0.isLetter && !$0.isNumber }))
         ]
         return LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 8) {
             ForEach(items, id: \.0) { item in
@@ -92,8 +97,9 @@ struct PasswordCreator: View {
         }
     }
 
+    /// Only rule: at least 6 characters and both fields match. Strength is shown, not enforced.
     static func isAcceptable(_ p: String, _ c: String) -> Bool {
-        p.count >= 10 && PasswordTools.strength(p).score >= 2 && p == c
+        p.count >= 6 && p == c
     }
 }
 

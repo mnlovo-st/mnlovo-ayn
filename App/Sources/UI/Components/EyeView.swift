@@ -140,7 +140,7 @@ struct EyeView: View {
     private var h: CGFloat { size * 0.6 }
     private var irisD: CGFloat { h * 0.9 }
 
-    private var needsClock: Bool { mood.kind == EyeMood.thinking.kind || mood.kind == EyeMood.scanning.kind }
+    private var needsClock: Bool { [EyeMood.thinking.kind, EyeMood.scanning.kind, EyeMood.lookUp.kind].contains(mood.kind) }
 
     private var lids: (top: CGFloat, bottom: CGFloat, tilt: CGFloat) {
         if blinking { return (0.02, 0.05, 0) }
@@ -194,7 +194,9 @@ struct EyeView: View {
     private func pupilOffset(_ t: Double) -> CGSize {
         let maxX = w * 0.24, maxY = h * 0.2
         switch mood {
-        case .lookUp: return CGSize(width: 0, height: -maxY)
+        case .lookUp:
+            // Looking away "innocently": drifts slowly left and right while you type.
+            return CGSize(width: CGFloat(sin(t * 0.9)) * maxX * 0.35, height: -maxY + CGFloat(sin(t * 1.7)) * maxY * 0.1)
         case .reading(let p), .suspicious(let p):
             let x = (min(max(p, 0), 1) * 2 - 1) * maxX
             return CGSize(width: x, height: maxY * 0.35)
@@ -323,11 +325,11 @@ struct EyeView: View {
             return
         }
         while !Task.isCancelled {
-            try? await Task.sleep(nanoseconds: UInt64(Double.random(in: 1.4...3.0) * 1_000_000_000))
+            try? await Task.sleep(nanoseconds: UInt64(Double.random(in: 0.9...2.2) * 1_000_000_000))
             guard !Task.isCancelled else { return }
-            let next = Double.random(in: 0...1) < 0.35
+            let next = Double.random(in: 0...1) < 0.25
                 ? CGSize.zero
-                : CGSize(width: CGFloat.random(in: -0.07...0.07) * w, height: CGFloat.random(in: -0.05...0.05) * h)
+                : CGSize(width: CGFloat.random(in: -0.16...0.16) * w, height: CGFloat.random(in: -0.1...0.1) * h)
             withAnimation(.spring(response: 0.22, dampingFraction: 0.82)) { jitter = next }
         }
     }

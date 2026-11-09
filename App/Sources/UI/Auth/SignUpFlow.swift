@@ -18,9 +18,11 @@ struct SignUpFlow: View {
     @State private var error: String?
     @State private var loading = false
     @State private var showCloudSetup = false
+    @State private var passcodeDone = false
+    @State private var duressConfirm = ""
     @FocusState private var focus: AYNFieldID?
 
-    private let totalSteps = 6
+    private let totalSteps = 8
     private let sb = SupabaseClient.shared
 
     var body: some View {
@@ -37,6 +39,19 @@ struct SignUpFlow: View {
                 .padding(.horizontal, 20)
                 .padding(.top, 10)
 
+                if step == 1 {
+                    // Pinned above the form so it stays visible when the keyboard is up.
+                    let mood = PasswordCreator.mood(password: input.password, confirm: confirm, focused: focus,
+                                                    first: .password, second: .confirm)
+                    VStack(spacing: 4) {
+                        EyeView(mood: mood, size: 120, sounds: true).frame(height: 96)
+                        Text(PasswordCreator.caption(for: mood))
+                            .font(Theme.font(14, .semibold)).foregroundStyle(Theme.sub)
+                            .contentTransition(.opacity)
+                    }
+                    .transition(.opacity)
+                }
+
                 ScrollView {
                     VStack(spacing: 16) {
                         switch step {
@@ -44,7 +59,9 @@ struct SignUpFlow: View {
                         case 1: passwordStep
                         case 2: emailStep
                         case 3: twoFAStep
-                        case 4: recoveryStep
+                        case 4: passcodeStep
+                        case 5: duressStep
+                        case 6: recoveryStep
                         default: finalStep
                         }
                     }
@@ -64,8 +81,14 @@ struct SignUpFlow: View {
                             .multilineTextAlignment(.center)
                             .transition(.opacity)
                     }
-                    PrimaryButton(title: nextTitle, icon: step == totalSteps - 1 ? "lock.fill" : "arrow.forward",
-                                  loading: loading, enabled: canContinue) { next() }
+                    if step == 5 && input.duressPassword.isEmpty && duressConfirm.isEmpty {
+                        Text(tr("اختياري — تقدر تفعّلها بعدين من الإعدادات", "Optional — you can turn it on later in Settings"))
+                            .font(Theme.font(12)).foregroundStyle(Theme.faint)
+                    }
+                    if step != 4 || passcodeDone {
+                        PrimaryButton(title: nextTitle, icon: step == totalSteps - 1 ? "lock.fill" : "arrow.forward",
+                                      loading: loading, enabled: canContinue) { next() }
+                    }
                 }
                 .padding(.horizontal, 20)
                 .padding(.bottom, 12)
@@ -79,6 +102,7 @@ struct SignUpFlow: View {
         switch step {
         case 2 where sb.isConfigured && !input.emailVerified: return tr("تحقق من الكود", "Verify code")
         case 3: return tr("تحقق وكمّل", "Verify & continue")
+        case 5: return input.duressPassword.isEmpty && duressConfirm.isEmpty ? tr("تخطّي", "Skip") : tr("فعّلها وكمّل", "Turn on & continue")
         case totalSteps - 1: return tr("إنشاء الحساب", "Create account")
         default: return tr("التالي", "Next")
         }
@@ -92,7 +116,11 @@ struct SignUpFlow: View {
         case 1: return PasswordCreator.isAcceptable(input.password, confirm)
         case 2: return !sb.isConfigured || input.emailVerified || emailCode.count >= 6
         case 3: return totpCode.count == 6
-        case 4: return PasswordTools.normalizeRecovery(recoveryCheck) == String(PasswordTools.normalizeRecovery(input.recoveryKey).suffix(4))
+        case 4: return passcodeDone
+        case 5:
+            if input.duressPassword.isEmpty && duressConfirm.isEmpty { return true }
+            return PasswordCreator.isAcceptable(input.duressPassword, duressConfirm) && input.duressPassword != input.password
+        case 6: return PasswordTools.normalizeRecovery(recoveryCheck) == String(PasswordTools.normalizeRecovery(input.recoveryKey).suffix(4))
         default: return true
         }
     }
@@ -128,6 +156,10 @@ struct SignUpFlow: View {
             }
         case 4:
             go(5)
+        case 5:
+            go(6)
+        case 6:
+            go(7)
         default:
             Task { await create() }
         }
@@ -169,7 +201,7 @@ struct SignUpFlow: View {
         VStack(spacing: 12) {
             Text(tr("أنشئ كلمة السر", "Create your password"))
                 .font(Theme.font(26, .heavy)).foregroundStyle(Theme.text)
-            PasswordCreator(password: $input.password, confirm: $confirm, focus: $focus)
+            PasswordCreator(password: $input.password, confirm: $confirm, focus: $focus, showEye: false)
             Label(tr("ما نقدر نردها لك، بس مفتاح الاسترجاع يقدر.", "We can't recover it for you, only your recovery key can."),
                   systemImage: "info.circle")
                 .font(Theme.font(13)).foregroundStyle(Theme.sub)
@@ -221,11 +253,67 @@ struct SignUpFlow: View {
             StepHeader(icon: "lock.rotation",
                        title: tr("التحقق بخطوتين (2FA)", "Two-factor (2FA)"),
                        subtitle: tr("أضف MNLOVO SAVER لتطبيق «كلمات السر» في الآيفون، وكل ٣٠ ثانية يطلع لك رمز جديد", "Add MNLOVO SAVER to the iPhone Passwords app — it will show a new code every 30 seconds."))
+            if TOTPCarry.load() != nil {
+                Label(tr("إذا أضفت رمز MNLOVO SAVER قبل في «كلمات السر»، استخدم نفس الرمز، ما تحتاج تضيفه مرة ثانية. واحذف أي رمز قديم باسم MNLOVO AYN.",
+                         "If you already added MNLOVO SAVER to Passwords, use that same code, no need to add it again. Delete any old MNLOVO AYN entry."),
+                      systemImage: "info.circle.fill")
+                    .font(Theme.font(13, .medium)).foregroundStyle(Theme.accent)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .glass(12, tint: Theme.accent)
+            }
             TwoFactorSetupCard(totp: input.totp)
             Text(tr("اكتب الرمز اللي يطلع لك:", "Enter the code it shows:"))
                 .font(Theme.font(15, .semibold)).foregroundStyle(Theme.text)
             CodeField(code: $totpCode)
                 .onChange(of: totpCode) { _, v in if v.count == 6 { next() } }
+        }
+    }
+
+    private var passcodeStep: some View {
+        VStack(spacing: 14) {
+            if passcodeDone {
+                VStack(spacing: 12) {
+                    EyeView(mood: .happy, size: 120)
+                    Text(tr("رمز الأقسام جاهز ✓", "Section passcode ready ✓")).font(Theme.font(22, .heavy)).foregroundStyle(Theme.text)
+                    Text(tr("بيطلبه منك كل ما تفتح «الحسابات» أو «الخزنة».", "You'll enter it whenever you open Accounts or Vault."))
+                        .font(Theme.font(14)).foregroundStyle(Theme.sub).multilineTextAlignment(.center)
+                    Button { withAnimation(.spring) { passcodeDone = false; input.sectionCode = "" } } label: {
+                        Text(tr("غيّر الرمز", "Change it")).font(Theme.font(14, .semibold)).foregroundStyle(Theme.accent)
+                    }
+                }
+                .padding(.top, 20)
+            } else {
+                PasscodeSetupFlow { code, kind in
+                    input.sectionCode = code
+                    input.sectionKind = kind
+                    withAnimation(.spring) { passcodeDone = true }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { if step == 4 { go(5) } }
+                }
+            }
+        }
+    }
+
+    private var duressStep: some View {
+        VStack(spacing: 14) {
+            StepHeader(icon: "theatermasks.fill",
+                       title: tr("كلمة سر الطوارئ", "Duress password"),
+                       subtitle: tr("حماية إضافية لو أحد أجبرك تفتح التطبيق.", "Extra protection if someone forces you to open the app."))
+            DuressExplainer()
+            VStack(alignment: .leading, spacing: 8) {
+                Label(tr("بعد Face ID، تكتبها مكان كلمة السر الحقيقية.", "After Face ID, type it instead of your real password."), systemImage: "1.circle.fill")
+                Label(tr("تفتح خزنة فاضية تبيّن طبيعية: نفس اسمك ورمز التحقق ورمز الأقسام.", "It opens an empty vault that looks normal: same name, 2FA and section passcode."), systemImage: "2.circle.fill")
+                Label(tr("بياناتك الحقيقية ما تبين أبداً، ولا أحد يعرف إن عندك خزنة ثانية.", "Your real data never shows, and nobody can tell a second vault exists."), systemImage: "3.circle.fill")
+            }
+            .font(Theme.font(13, .medium)).foregroundStyle(Theme.sub)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            PasswordCreator(password: $input.duressPassword, confirm: $duressConfirm, focus: $focus,
+                            firstID: .duress, secondID: .duressConfirm,
+                            titleFirst: tr("كلمة سر الطوارئ", "Duress password"),
+                            titleSecond: tr("أكّدها", "Confirm it"), showEye: false)
+            if !input.duressPassword.isEmpty && input.duressPassword == input.password {
+                Label(tr("لازم تكون مختلفة عن كلمة السر الأساسية.", "It must differ from your main password."), systemImage: "exclamationmark.triangle.fill")
+                    .font(Theme.font(13, .semibold)).foregroundStyle(Theme.danger)
+            }
         }
     }
 

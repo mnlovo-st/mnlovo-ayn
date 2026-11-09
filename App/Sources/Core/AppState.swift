@@ -25,10 +25,27 @@ struct NewAccountInput {
     var phone = ""
     var birthDate = Calendar.current.date(byAdding: .year, value: -20, to: Date()) ?? Date()
     var password = ""
-    var totp = TOTP.generate(issuer: Brand.issuer, account: "")
+    /// Re-uses the 2FA secret from an earlier sign-up attempt (or install), so the code already
+    /// saved in the iPhone Passwords app keeps working.
+    var totp = TOTPCarry.load() ?? TOTP.generate(issuer: Brand.issuer, account: "")
     var recoveryKey = PasswordTools.recoveryKey()
     var emailVerified = false
     var enableBiometrics = true
+    var sectionCode = ""
+    var sectionKind: PasscodeKind = .pin6
+    var duressPassword = ""
+}
+
+/// Keeps the account's 2FA secret in the Keychain (this device only) across sign-up attempts and reinstalls.
+enum TOTPCarry {
+    static let account = "totp.carry"
+    static func load() -> TOTP? {
+        guard let d = Keychain.get(account), let t = try? JSONDecoder().decode(TOTP.self, from: d) else { return nil }
+        return t
+    }
+    static func save(_ t: TOTP) {
+        if let d = try? JSONEncoder().encode(t) { Keychain.set(d, account: account) }
+    }
 }
 
 struct BackupBundle: Codable {
@@ -172,9 +189,17 @@ final class AppState: ObservableObject {
 
         var totp = n.totp
         totp.account = n.username
-        let prof = Profile(username: n.username, email: n.email.lowercased(), phone: n.phone, birthDate: n.birthDate,
+        TOTPCarry.save(totp)
+        var prof = Profile(username: n.username, email: n.email.lowercased(), phone: n.phone, birthDate: n.birthDate,
                            emailVerified: n.emailVerified, totp: totp,
                            inboxPrivateKey: inbox.rawRepresentation, remindersKey: remKey)
+        if !n.sectionCode.isEmpty {
+            let code = n.sectionCode
+            let sSalt = AYNCrypto.randomBytes(16)
+            prof.sectionSalt = sSalt
+            prof.sectionHash = await Task.detached { (try? AYNCrypto.pbkdf2(code, salt: sSalt, rounds: 200_000))?.rawData }.value
+            prof.sectionKind = n.sectionKind.rawValue
+        }
 
         VaultStorage.wipe(.real)
         try VaultStorage.saveMeta(built, .real)
@@ -193,6 +218,7 @@ final class AppState: ObservableObject {
         }
         defaults.set(true, forKey: "backup.dirty")
         openVault(.real, key: mk, profile: prof)
+        if !n.duressPassword.isEmpty { try? await setupDuress(password: n.duressPassword) }
     }
 
     // MARK: - Unlock

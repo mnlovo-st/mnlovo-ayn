@@ -188,7 +188,10 @@ struct SectionGate<Content: View>: View {
     private var currentMood: EyeMood {
         if mood == .angry || mood == .happy { return mood }
         if checking { return .thinking }
-        return code.isEmpty ? .idle : .lookUp
+        if code.isEmpty { return .idle }
+        // Follows each digit across the pad.
+        let total = CGFloat(state.sectionKind.length ?? max(code.count, 8))
+        return .reading(min(1, CGFloat(code.count) / total))
     }
 
     private func bio() async {

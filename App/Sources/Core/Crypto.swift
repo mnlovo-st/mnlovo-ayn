@@ -215,11 +215,14 @@ enum Keychain {
         SecItemDelete(query as CFDictionary)
     }
 
+    /// Wipes every item except the carried 2FA secret (so the Passwords-app code keeps working).
     static func deleteAll() {
+        let carry = get("totp.carry")
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service
         ]
         SecItemDelete(query as CFDictionary)
+        if let carry { set(carry, account: "totp.carry") }
     }
 }

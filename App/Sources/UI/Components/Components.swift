@@ -280,7 +280,38 @@ struct CodeField: View {
             .contentShape(Rectangle())
             .onTapGesture { focused = true }
         }
+        .overlay(alignment: .bottom) {
+            PasteButton(payloadType: String.self) { items in
+                guard let text = items.first else { return }
+                let found = Self.extractCode(text, max: length)
+                DispatchQueue.main.async {
+                    code = found
+                    Haptics.success()
+                }
+            }
+            .buttonBorderShape(.capsule)
+            .labelStyle(.titleAndIcon)
+            .tint(Theme.accent)
+            .controlSize(.small)
+            .offset(y: 44)
+        }
+        .padding(.bottom, 40)
         .onAppear { DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { focused = true } }
+    }
+
+    /// Picks the code out of whatever was copied (e.g. "Your code: 482 913").
+    static func extractCode(_ text: String, max: Int) -> String {
+        let latin = TOTP.westernDigits(text)
+        var runs: [String] = []
+        var cur = ""
+        for ch in latin {
+            if ch.isASCII && ch.isNumber { cur.append(ch) }
+            else if ch == " " || ch == "-" { continue }
+            else { if !cur.isEmpty { runs.append(cur); cur = "" } }
+        }
+        if !cur.isEmpty { runs.append(cur) }
+        if let best = runs.first(where: { $0.count >= 6 && $0.count <= max }) { return best }
+        return String(runs.joined().prefix(max))
     }
 }
 

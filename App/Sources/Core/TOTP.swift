@@ -76,7 +76,7 @@ struct TOTP: Codable, Hashable {
         return String(repeating: "0", count: max(0, digits - s.count)) + s
     }
 
-    func verify(_ input: String, window: Int = 1, at date: Date = Date()) -> Bool {
+    func verify(_ input: String, window: Int = 2, at date: Date = Date()) -> Bool {
         let clean = input.filter { $0.isNumber }
         let latin = Self.westernDigits(clean)
         guard latin.count == digits else { return false }
