@@ -17,6 +17,16 @@ jobs:
       - name: Show Xcode version
         run: xcodebuild -version
 
+      - name: Check Supabase (info only)
+        continue-on-error: true
+        run: |
+          URL=$(grep -o 'https://[a-z0-9]*\.supabase\.co' App/Sources/Core/SupabaseConfig.swift || true)
+          KEY=$(grep -o 'sb_publishable_[A-Za-z0-9_-]*' App/Sources/Core/SupabaseConfig.swift || true)
+          if [ -n "$URL" ]; then
+            echo "auth settings: $(curl -s -o /dev/null -w '%{http_code}' -H "apikey: $KEY" "$URL/auth/v1/settings")"
+            echo "storage bucket check (401/400 expected without login): $(curl -s -o /dev/null -w '%{http_code}' -H "apikey: $KEY" "$URL/storage/v1/bucket/backups")"
+          fi
+
       - name: Install XcodeGen
         run: brew install xcodegen
 
