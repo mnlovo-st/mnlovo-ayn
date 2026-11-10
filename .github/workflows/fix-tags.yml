@@ -1,0 +1,27 @@
+name: Repoint release tags
+# One-off, run by hand: after the history rewrite, move every build-N tag to the rewritten commit
+# with the same file tree, so no tag keeps the old commits alive. Deleted once it has run.
+on: workflow_dispatch
+permissions:
+  contents: write
+jobs:
+  retag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Move tags
+        run: |
+          git fetch --tags --force
+          declare -A T
+          while read c t; do T[$t]=$c; done < <(git log origin/main --format="%H %T")
+          for tag in $(git tag); do
+            tree=$(git rev-parse "$tag^{tree}")
+            new=${T[$tree]}
+            if [ -n "$new" ] && [ "$(git rev-parse "$tag^{commit}")" != "$new" ]; then
+              git tag -f "$tag" "$new"
+              git push --force origin "refs/tags/$tag"
+              echo "$tag -> $new"
+            fi
+          done
