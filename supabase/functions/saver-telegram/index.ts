@@ -62,11 +62,11 @@ async function ensureWebhook(cfg: Config, force = false) {
   // Bot profile, in Arabic and English
   await tg(cfg, "setMyName", { name: "MNLOVO SAVER" });
   await tg(cfg, "setMyDescription", {
-    description: "The official MNLOVO SAVER bot. Link it from the app and whatever you add arrives here, neatly formatted. Top-secret items are never sent.",
+    description: "The official MNLOVO SAVER bot. Link it from the app and whatever you add arrives here, neatly formatted.",
   });
   await tg(cfg, "setMyDescription", {
     language_code: "ar",
-    description: "البوت الرسمي لتطبيق MNLOVO SAVER 🔐\nاربطه من التطبيق، وأي شي تضيفه يوصلك هنا مرتّب ومنسّق.\n🔴 الأشياء السرية جداً ما تنرسل أبداً.",
+    description: "البوت الرسمي لتطبيق MNLOVO SAVER 🔐\nاربطه من التطبيق، وأي شي تضيفه يوصلك هنا مرتّب ومنسّق.\nومشوّش، المسه عشان يبين.",
   });
   await tg(cfg, "setMyShortDescription", { short_description: "Official MNLOVO SAVER bot · © MNLOVO 2026" });
   await tg(cfg, "setMyShortDescription", { language_code: "ar", short_description: "البوت الرسمي لتطبيق MNLOVO SAVER · © MNLOVO 2026" });
@@ -95,7 +95,7 @@ function welcome(kind: string, role = "owner") {
     return `✅ <b>تم الربط</b>\n${LINE}\nصاحب حساب MNLOVO SAVER شاركك تحديثاته، وبتوصلك هنا مرتّبة ومنسّقة.\n${LINE}\n<i>MNLOVO SAVER · © MNLOVO 2026</i>`;
   }
   const where = kind === "channel" ? "هذي القناة" : kind === "private" ? "هنا" : "هذا القروب";
-  return `✅ <b>تم ربط MNLOVO SAVER</b>\n${LINE}\nمن الحين أي شي تضيفه في التطبيق بيوصل ${where} مرتّب ومنسّق.\n🔴 الأشياء السرية جداً ما تنرسل أبداً.\n${LINE}\n<i>MNLOVO SAVER · © MNLOVO 2026</i>`;
+  return `✅ <b>تم ربط MNLOVO SAVER</b>\n${LINE}\nمن الحين أي شي تضيفه في التطبيق بيوصل ${where} مرتّب ومنسّق.\nالنصوص تجي مشوّشة، المسها عشان تبين.\n${LINE}\n<i>MNLOVO SAVER · © MNLOVO 2026</i>`;
 }
 
 function chatTitle(chat: Record<string, any>) {
@@ -177,9 +177,91 @@ async function sendMenu(cfg: Config, chatId: number, fromId?: number, editId?: n
   kb.push([{ text: t.role === "friend" ? "🚪 وقّف استقبالي نهائياً" : "🔌 فصل البوت من هنا", callback_data: "tg:unlink" }]);
   kb.push(SUPPORT_ROW);
   const text = `⚙️ <b>التحكم بـ MNLOVO SAVER</b>\n${LINE}\nالحالة: ${t.enabled ? "🟢 النشر شغّال" : "⏸️ النشر موقّف"}\nالنوع: ${
-    t.type === "channel" ? "قناة" : t.type === "private" ? (t.role === "friend" ? "شخص مشارَك" : "محادثتك الخاصة") : "قروب"}\n\n🔴 الأشياء السرية جداً ما تنرسل أبداً.\n${FOOT}`;
+    t.type === "channel" ? "قناة" : t.type === "private" ? (t.role === "friend" ? "شخص مشارَك" : "محادثتك الخاصة") : "قروب"}\n${FOOT}`;
   if (editId) await tg(cfg, "editMessageText", { chat_id: chatId, message_id: editId, text, parse_mode: "HTML", reply_markup: { inline_keyboard: kb } });
   else await tg(cfg, "sendMessage", { chat_id: chatId, text, parse_mode: "HTML", reply_markup: { inline_keyboard: kb } });
+}
+
+
+// MARK: - Heartbeat / legacy delivery
+
+const DAY = 86_400_000;
+
+async function legacyAlive(cfg: Config, userId: string, chatId?: number) {
+  await admin.from("saver_legacy")
+    .update({ last_seen: new Date().toISOString(), state: "ok", asked_count: 0, asked_at: null, updated_at: new Date().toISOString() })
+    .eq("user_id", userId);
+  if (chatId) {
+    await tg(cfg, "sendMessage", { chat_id: chatId, parse_mode: "HTML",
+      text: `\u2764\ufe0f <b>\u0627\u0644\u062d\u0645\u062f\u0644\u0644\u0647</b>\n${LINE}\n\u0633\u062c\u0651\u0644\u0646\u0627 \u0625\u0646\u0643 \u0628\u062e\u064a\u0631 \u2713 \u0648\u0631\u062c\u0639 \u0627\u0644\u0639\u062f\u0627\u062f \u0645\u0646 \u0627\u0644\u0623\u0648\u0644.\n${FOOT}` });
+  }
+}
+
+/** Splits a long bundle into Telegram-sized chunks. */
+function chunk(text: string, size = 3500): string[] {
+  const out: string[] = [];
+  let rest = text;
+  while (rest.length > size) {
+    let cut = rest.lastIndexOf("\n", size);
+    if (cut < size * 0.5) cut = size;
+    out.push(rest.slice(0, cut));
+    rest = rest.slice(cut);
+  }
+  if (rest.trim()) out.push(rest);
+  return out;
+}
+
+async function releaseLegacy(cfg: Config, row: any) {
+  if (!row.recipient_chat_id || !row.bundle) return;
+  const { data: reg } = await admin.from("saver_accounts").select("username, email_hint").eq("user_id", row.user_id).maybeSingle();
+  const who = reg?.username ? esc(reg.username) : (reg?.email_hint ?? "");
+  await tg(cfg, "sendMessage", { chat_id: row.recipient_chat_id, parse_mode: "HTML",
+    text: `\ud83d\udd4a\ufe0f <b>\u0623\u0645\u0627\u0646\u0629 \u0645\u0646 MNLOVO SAVER</b>\n${LINE}\n\u0635\u0627\u062d\u0628 \u0627\u0644\u062d\u0633\u0627\u0628 ${who} \u0627\u062e\u062a\u0627\u0631\u0643 \u0623\u0645\u064a\u0646\u0627\u064b \u0639\u0644\u0649 \u0628\u064a\u0627\u0646\u0627\u062a\u0647.\n\u0645\u0627 \u0641\u062a\u062d \u0627\u0644\u062a\u0637\u0628\u064a\u0642 \u0645\u0646 ${row.interval_days} \u064a\u0648\u0645\u060c \u0648\u0645\u0627 \u0631\u062f\u0651 \u0639\u0644\u0649 \u0631\u0633\u0627\u0626\u0644\u0646\u0627 \u0637\u0648\u0627\u0644 ${row.grace_days} \u0623\u064a\u0627\u0645.\n\n\u062a\u062d\u062a \u0628\u064a\u0627\u0646\u0627\u062a\u0647 \u0632\u064a \u0645\u0627 \u062a\u0631\u0643\u0647\u0627. \u062d\u0627\u0641\u0638 \u0639\u0644\u064a\u0647\u0627.\n${FOOT}` });
+  for (const part of chunk(row.bundle)) {
+    await tg(cfg, "sendMessage", { chat_id: row.recipient_chat_id, text: `<pre>${esc(part)}</pre>`, parse_mode: "HTML" });
+  }
+  await admin.from("saver_legacy").update({ state: "released", released_at: new Date().toISOString() }).eq("user_id", row.user_id);
+  // Tell the owner too, in case they are simply away.
+  const { data: own } = await admin.from("saver_tg_targets").select("chat_id")
+    .eq("user_id", row.user_id).eq("role", "owner").eq("type", "private").limit(1).maybeSingle();
+  if (own) {
+    await tg(cfg, "sendMessage", { chat_id: own.chat_id, parse_mode: "HTML",
+      text: `\u2139\ufe0f <b>\u0627\u0646\u0631\u0633\u0644\u062a \u0627\u0644\u0623\u0645\u0627\u0646\u0629</b>\n${LINE}\n\u0645\u0627 \u0648\u0635\u0644\u0646\u0627 \u0645\u0646\u0643 \u0631\u062f\u060c \u0641\u0633\u0644\u0651\u0645\u0646\u0627 \u0628\u064a\u0627\u0646\u0627\u062a\u0643 \u0644\u0640 ${esc(row.recipient_name || "\u0627\u0644\u0634\u062e\u0635 \u0627\u0644\u0644\u064a \u0627\u062e\u062a\u0631\u062a\u0647")}.\n\u0644\u0648 \u0647\u0630\u0627 \u0635\u0627\u0631 \u0628\u0627\u0644\u063a\u0644\u0637\u060c \u0627\u0641\u062a\u062d \u0627\u0644\u062a\u0637\u0628\u064a\u0642 \u0648\u0639\u062f\u0651\u0644 \u0627\u0644\u0625\u0639\u062f\u0627\u062f\u0627\u062a.\n${FOOT}` });
+  }
+}
+
+/** Runs the heartbeat checks. Called daily by the keep-alive workflow. */
+async function runLegacyCron(cfg: Config) {
+  const now = Date.now();
+  const { data: rows } = await admin.from("saver_legacy").select("*").eq("enabled", true).neq("state", "released");
+  let asked = 0, released = 0;
+  for (const row of rows ?? []) {
+    const quiet = now - new Date(row.last_seen).getTime();
+    if (quiet < row.interval_days * DAY) continue;
+    const { data: own } = await admin.from("saver_tg_targets").select("chat_id")
+      .eq("user_id", row.user_id).eq("role", "owner").eq("type", "private").limit(1).maybeSingle();
+    const overGrace = quiet >= (row.interval_days + row.grace_days) * DAY;
+    if (overGrace && row.recipient_chat_id && row.bundle) {
+      await releaseLegacy(cfg, row);
+      released++;
+      continue;
+    }
+    // Ask at most once a day.
+    if (row.asked_at && now - new Date(row.asked_at).getTime() < DAY * 0.9) continue;
+    if (!own) continue;
+    const left = Math.max(0, Math.ceil(((row.interval_days + row.grace_days) * DAY - quiet) / DAY));
+    await tg(cfg, "sendMessage", { chat_id: own.chat_id, parse_mode: "HTML",
+      text: `\ud83e\udec0 <b>\u0637\u0645\u0651\u0646\u0651\u0627 \u0639\u0646\u0643</b>\n${LINE}\n\u0635\u0627\u0631 \u0644\u0643 ${row.interval_days} \u064a\u0648\u0645 \u0645\u0627 \u0641\u062a\u062d\u062a MNLOVO SAVER.\n\u0627\u0636\u063a\u0637 \u0627\u0644\u0632\u0631 \u062a\u062d\u062a \u0639\u0634\u0627\u0646 \u0646\u0639\u0631\u0641 \u0625\u0646\u0643 \u0628\u062e\u064a\u0631.\n\n\u23f3 \u0628\u0627\u0642\u064a ${left} \u064a\u0648\u0645\u060c \u0648\u0628\u0639\u062f\u0647\u0627 \u062a\u0646\u0633\u0644\u0651\u0645 \u0623\u0645\u0627\u0646\u062a\u0643 \u0644\u0640 ${esc(row.recipient_name || "\u0627\u0644\u0634\u062e\u0635 \u0627\u0644\u0644\u064a \u0627\u062e\u062a\u0631\u062a\u0647")}.\n${FOOT}`,
+      reply_markup: { inline_keyboard: [
+        [{ text: "\u2764\ufe0f \u0623\u0646\u0627 \u0628\u062e\u064a\u0631", callback_data: "tg:alive" }],
+        [{ text: "\u23f8\ufe0f \u0623\u0648\u0642\u0650\u0641 \u0627\u0644\u062e\u0627\u0635\u064a\u0629", callback_data: "tg:legacy_off" }],
+      ] } });
+    await admin.from("saver_legacy").update({
+      state: "asking", asked_at: new Date().toISOString(), asked_count: (row.asked_count ?? 0) + 1,
+    }).eq("user_id", row.user_id);
+    asked++;
+  }
+  return { checked: rows?.length ?? 0, asked, released };
 }
 
 async function handleCallback(cfg: Config, q: Record<string, any>) {
@@ -274,6 +356,16 @@ async function handleUpdate(cfg: Config, u: Record<string, any>) {
       await tg(cfg, "sendMessage", { chat_id: m.chat.id, text: "⚠️ رابط الربط انتهى. ارجع للتطبيق واضغط «ربط تيليجرام» مرة ثانية." });
       return;
     }
+    if (link.kind === "legacy" && m.chat.type === "private") {
+      const name = chatTitle(m.chat);
+      await admin.from("saver_legacy").upsert({
+        user_id: link.user_id, recipient_chat_id: m.chat.id, recipient_name: name, updated_at: new Date().toISOString(),
+      }, { onConflict: "user_id" });
+      await admin.from("saver_tg_links").delete().eq("code", code);
+      await tg(cfg, "sendMessage", { chat_id: m.chat.id, parse_mode: "HTML",
+        text: `\ud83e\udd1d <b>\u0635\u0631\u062a \u0627\u0644\u0623\u0645\u064a\u0646</b>\n${LINE}\n\u0648\u0627\u062d\u062f \u0645\u0646 \u0645\u0633\u062a\u062e\u062f\u0645\u064a MNLOVO SAVER \u0627\u062e\u062a\u0627\u0631\u0643 \u0623\u0645\u064a\u0646\u0627\u064b \u0639\u0644\u0649 \u0628\u064a\u0627\u0646\u0627\u062a\u0647.\n\n\u0645\u0627 \u0628\u064a\u0648\u0635\u0644\u0643 \u0634\u064a \u0627\u0644\u062d\u064a\u0646. \u0628\u0633 \u0625\u0630\u0627 \u0627\u0646\u0642\u0637\u0639\u062a \u0623\u062e\u0628\u0627\u0631\u0647 \u0645\u062f\u0629 \u0637\u0648\u064a\u0644\u0629\u060c \u0628\u0646\u0633\u0644\u0651\u0645\u0643 \u0623\u0645\u0627\u0646\u062a\u0647.\n\n\ud83e\udd32 \u0627\u062d\u062a\u0641\u0638 \u0641\u064a\u0647\u0627 \u0648\u0644\u0627 \u062a\u0639\u0637\u064a\u0647\u0627 \u0644\u0623\u062d\u062f.\n${FOOT}` });
+      return;
+    }
     const friend = link.kind === "friend" && m.chat.type === "private";
     if (friend) {
       // The owner opened their own share link: that's just their private chat.
@@ -316,6 +408,12 @@ Deno.serve(async (req) => {
   const cfg = await config();
   if (!cfg) return json({ error: "not_configured" }, 503);
 
+  // Daily heartbeat sweep (called by the keep-alive workflow); also re-arms the webhook if it drifted.
+  if (req.method === "GET" && new URL(req.url).searchParams.has("cron")) {
+    await ensureWebhook(cfg);
+    return json(await runLegacyCron(cfg));
+  }
+
   // Health / setup ping: makes sure the webhook and bot profile are in place.
   if (req.method === "GET") {
     const me = await tg(cfg, "getMe", {});
@@ -345,7 +443,7 @@ Deno.serve(async (req) => {
       const code = crypto.randomUUID().replace(/-/g, "").slice(0, 24);
       await admin.from("saver_tg_links").delete().eq("user_id", user.id)
         .lt("created_at", new Date(Date.now() - 30 * 60 * 1000).toISOString());
-      const kind = ["friend", "channel"].includes(body.kind) ? body.kind : "self";
+      const kind = ["friend", "channel", "legacy"].includes(body.kind) ? body.kind : "self";
       if (kind === "channel") {
         // Channels are matched through your own Telegram account, so your bot chat must be linked first.
         const { data: own } = await admin.from("saver_tg_targets").select("chat_id")
@@ -379,6 +477,37 @@ Deno.serve(async (req) => {
       }
       await admin.from("saver_tg_targets").delete().eq("user_id", user.id);
       await admin.from("saver_tg_links").delete().eq("user_id", user.id);
+      return json({ ok: true });
+    }
+    case "legacy_get": {
+      const { data } = await admin.from("saver_legacy").select(
+        "enabled, interval_days, grace_days, recipient_chat_id, recipient_name, last_seen, state, bundle_at, asked_count"
+      ).eq("user_id", user.id).maybeSingle();
+      return json(data ?? { enabled: false });
+    }
+    case "legacy_set": {
+      const patch: Record<string, unknown> = { user_id: user.id, updated_at: new Date().toISOString() };
+      if (typeof body.enabled === "boolean") { patch.enabled = body.enabled; patch.state = body.enabled ? "ok" : "paused"; }
+      if (typeof body.interval_days === "number") patch.interval_days = Math.min(365, Math.max(1, body.interval_days | 0));
+      if (typeof body.grace_days === "number") patch.grace_days = Math.min(60, Math.max(1, body.grace_days | 0));
+      if (typeof body.bundle === "string") { patch.bundle = body.bundle.slice(0, 200_000); patch.bundle_at = new Date().toISOString(); }
+      if (body.clear_recipient) { patch.recipient_chat_id = null; patch.recipient_name = ""; }
+      patch.last_seen = new Date().toISOString();
+      await admin.from("saver_legacy").upsert(patch, { onConflict: "user_id" });
+      const { data } = await admin.from("saver_legacy").select(
+        "enabled, interval_days, grace_days, recipient_chat_id, recipient_name, last_seen, state, bundle_at, asked_count"
+      ).eq("user_id", user.id).maybeSingle();
+      return json(data ?? {});
+    }
+    case "legacy_checkin": {
+      await legacyAlive(cfg, user.id);
+      return json({ ok: true });
+    }
+    case "legacy_test": {
+      const { data: row } = await admin.from("saver_legacy").select("*").eq("user_id", user.id).maybeSingle();
+      if (!row?.recipient_chat_id) return json({ error: "no_recipient" }, 400);
+      await tg(cfg, "sendMessage", { chat_id: row.recipient_chat_id, parse_mode: "HTML",
+        text: `\ud83e\uddea <b>\u0631\u0633\u0627\u0644\u0629 \u062a\u062c\u0631\u064a\u0628\u064a\u0629</b>\n${LINE}\n\u0647\u0630\u064a \u0645\u062c\u0631\u062f \u062a\u062c\u0631\u0628\u0629 \u2014 \u0645\u0627 \u0635\u0627\u0631 \u0634\u064a. \u0623\u0646\u062a \u0627\u0644\u0623\u0645\u064a\u0646 \u0639\u0644\u0649 \u0628\u064a\u0627\u0646\u0627\u062a \u0623\u062d\u062f \u0645\u0633\u062a\u062e\u062f\u0645\u064a MNLOVO SAVER.\n${FOOT}` });
       return json({ ok: true });
     }
     case "alert": {

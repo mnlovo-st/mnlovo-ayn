@@ -185,6 +185,45 @@ final class AppState: ObservableObject {
         return "\(mail)|\(tail)|\(f.string(from: birth))"
     }
 
+    /// Builds the plain-text parcel handed over by the heartbeat feature. Only what the user ticked.
+    func legacyBundle(_ sel: LegacyService.Selection) -> String {
+        var out = ["MNLOVO SAVER — \(tr("أمانة", "Legacy parcel"))",
+                   "\(tr("أُعدّت في", "Prepared")): \(Fmt.date(Date()))", ""]
+        if !sel.message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            out.append(contentsOf: [tr("رسالة منّي:", "A message from me:"), sel.message, ""])
+        }
+        if sel.accounts && !accounts.isEmpty {
+            out.append("══ \(tr("الحسابات", "Accounts")) (\(accounts.count)) ══")
+            for a in accounts.sorted(by: { $0.service < $1.service }) {
+                out.append("• \(a.service)")
+                if !a.login.isEmpty { out.append("  \(tr("المستخدم", "Login")): \(a.login)") }
+                if sel.passwords && !a.password.isEmpty { out.append("  \(tr("كلمة السر", "Password")): \(a.password)") }
+                if !a.url.isEmpty { out.append("  \(tr("الرابط", "Link")): \(a.url)") }
+                if let t = a.totp { out.append("  2FA: \(t.secretBase32)") }
+                if !a.notes.isEmpty { out.append("  \(a.notes)") }
+            }
+            out.append("")
+        }
+        if sel.notes && !notes.isEmpty {
+            out.append("══ \(tr("الملاحظات", "Notes")) (\(notes.count)) ══")
+            for n in notes { out.append("• \(n.title)\n  \(n.body)") }
+            out.append("")
+        }
+        if sel.reminders && !reminders.isEmpty {
+            out.append("══ \(tr("التذكيرات", "Reminders")) ══")
+            for r in reminders where !r.done { out.append("• \(r.title) — \(Fmt.date(r.due))") }
+            out.append("")
+        }
+        if sel.fileList && !files.isEmpty {
+            out.append("══ \(tr("ملفات في الخزنة (أسماء فقط)", "Vault files (names only)")) ══")
+            for f in files { out.append("• \(f.name) — \(Fmt.bytes(f.size))") }
+            out.append("")
+        }
+        out.append(tr("الملفات والصور نفسها تبقى مشفّرة في الجهاز وما تنرسل.",
+                      "The files and photos themselves stay encrypted on the device and are not sent."))
+        return out.joined(separator: "\n")
+    }
+
     nonisolated static func identity2String(phone: String, birth: Date) -> String {
         let digits = TOTP.westernDigits(phone).filter { $0.isASCII && $0.isNumber }
         return "v2|\(digits.suffix(9))|\(SupabaseClient.day(birth))"
@@ -411,7 +450,10 @@ final class AppState: ObservableObject {
         space = s
         profile = prof
         if s == .real && TOTPCarry.load() == nil { TOTPCarry.save(prof.totp) }
-        if s == .real { ensureIdentity2(prof) }
+        if s == .real {
+            ensureIdentity2(prof)
+            LegacyService.shared.checkIn()   // proof of life for the heartbeat feature
+        }
         if RemindersStore.key(s) == nil { RemindersStore.installKey(prof.remindersKey, space: s) }
         accounts = VaultStorage.load([AccountItem].self, "accounts.enc", space: s, key: key) ?? []
         notes = VaultStorage.load([SecureNote].self, "notes.enc", space: s, key: key) ?? []

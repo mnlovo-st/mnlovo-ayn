@@ -6,6 +6,7 @@ struct SignUpFlow: View {
 
     @State private var input = NewAccountInput()
     @State private var step = 0
+    @State private var wantsLegacy = false
     @State private var confirm = ""
     @State private var emailCode = ""
     @State private var emailSent = false
@@ -24,7 +25,7 @@ struct SignUpFlow: View {
     @State private var showPhoneWarning = false
     @FocusState private var focus: AYNFieldID?
 
-    private let totalSteps = 8
+    private let totalSteps = 9
     private let sb = SupabaseClient.shared
 
     var body: some View {
@@ -64,6 +65,7 @@ struct SignUpFlow: View {
                         case 4: passcodeStep
                         case 5: duressStep
                         case 6: recoveryStep
+                        case 7: legacyStep
                         default: finalStep
                         }
                     }
@@ -113,6 +115,7 @@ struct SignUpFlow: View {
         case 2 where sb.isConfigured && !input.emailVerified: return tr("تحقق من الكود", "Verify code")
         case 3: return tr("تحقق وكمّل", "Verify & continue")
         case 5: return input.duressPassword.isEmpty && duressConfirm.isEmpty ? tr("تخطّي", "Skip") : tr("فعّلها وكمّل", "Turn on & continue")
+        case 7: return wantsLegacy ? tr("فعّلها وكمّل", "Turn on & continue") : tr("تخطّي", "Skip")
         case totalSteps - 1: return tr("إنشاء الحساب", "Create account")
         default: return tr("التالي", "Next")
         }
@@ -172,6 +175,8 @@ struct SignUpFlow: View {
             go(6)
         case 6:
             go(7)
+        case 7:
+            go(8)
         default:
             Task { await create() }
         }
@@ -341,6 +346,31 @@ struct SignUpFlow: View {
         }
     }
 
+    /// Introduces the heartbeat; the actual trustee is picked later, once Telegram is linked.
+    private var legacyStep: some View {
+        VStack(spacing: 14) {
+            StepHeader(icon: "heart.text.square.fill",
+                       title: tr("نبض الحياة", "Heartbeat"),
+                       subtitle: tr("لو انقطعت أخبارك مدة طويلة، بياناتك ما تضيع — توصل لشخص واحد تختاره أنت.",
+                                    "If you go silent for a long time, your data isn't lost — it reaches one person you choose."))
+            LegacyExplainer()
+            Toggle(isOn: $wantsLegacy) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(tr("أبيها، ذكّرني أكمّل الإعداد", "I want it — remind me to finish setup"))
+                        .font(Theme.font(15, .bold)).foregroundStyle(Theme.text)
+                    Text(tr("بتختار الأمين والمدة بعد ما تربط تيليجرام.", "You'll pick the trustee and the period after linking Telegram."))
+                        .font(Theme.font(12)).foregroundStyle(Theme.sub)
+                }
+            }
+            .tint(Color(hex: 0xFF5FA2))
+            .glass(14)
+            Text(tr("اختيارية تماماً، وتقدر تشغّلها أو توقفها وقت ما تبي من الإعدادات.",
+                    "Completely optional — turn it on or off any time in Settings."))
+                .font(Theme.font(12)).foregroundStyle(Theme.faint)
+                .multilineTextAlignment(.center)
+        }
+    }
+
     private var finalStep: some View {
         VStack(spacing: 14) {
             StepHeader(icon: "checkmark.shield.fill",
@@ -431,6 +461,8 @@ struct SignUpFlow: View {
         defer { loading = false }
         if notifications { _ = await ReminderEngine.requestPermission() }
         if intruder { IntruderCam.enabled = await IntruderCam.requestPermission() } else { IntruderCam.enabled = false }
+        // The trustee can only be picked once Telegram is linked, so remember the intent.
+        UserDefaults.standard.set(wantsLegacy, forKey: "legacy.wanted")
         var n = input
         n.username = n.username.trimmingCharacters(in: .whitespaces)
         n.email = n.email.trimmingCharacters(in: .whitespaces)

@@ -23,6 +23,9 @@ private func wf(_ size: CGFloat, _ weight: Font.Weight) -> Font {
 struct SaverWidgetBundle: WidgetBundle {
     var body: some Widget {
         NextTasksWidget()
+        StreakWidget()
+        SubscriptionWidget()
+        QuickOpenWidget()
         ReminderLiveActivity()
     }
 }
@@ -36,10 +39,7 @@ struct TasksEntry: TimelineEntry {
 
 struct TasksProvider: TimelineProvider {
     func placeholder(in context: Context) -> TasksEntry {
-        TasksEntry(date: Date(), payload: WidgetShared.Payload(items: [
-            .init(id: "1", title: "واجب قواعد البيانات", due: Date().addingTimeInterval(86400 * 2), icon: "book.closed.fill", secret: false),
-            .init(id: "2", title: "موعد", due: Date().addingTimeInterval(3600 * 5), icon: "calendar.badge.clock", secret: false)
-        ]))
+        TasksEntry(date: Date(), payload: WidgetShared.sample)
     }
 
     func getSnapshot(in context: Context, completion: @escaping (TasksEntry) -> Void) {
@@ -286,5 +286,174 @@ private struct LockScreenActivity: View {
             .tint(LinearGradient(colors: [teal, indigo], startPoint: .leading, endPoint: .trailing))
         }
         .padding(16)
+    }
+}
+
+
+// MARK: - Routine streak
+
+struct StreakWidget: Widget {
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: WidgetShared.streakKind, provider: TasksProvider()) { entry in
+            StreakView(p: entry.payload)
+                .containerBackground(for: .widget) {
+                    LinearGradient(colors: [Color(red: 0.16, green: 0.07, blue: 0.03), night], startPoint: .topLeading, endPoint: .bottomTrailing)
+                }
+        }
+        .configurationDisplayName("MNLOVO · Routine streak")
+        .description("Routine streak · سلسلة الروتين")
+        .supportedFamilies([.systemSmall, .accessoryCircular, .accessoryRectangular])
+    }
+}
+
+struct StreakView: View {
+    var p: WidgetShared.Payload
+    @Environment(\.widgetFamily) private var family
+
+    private var progress: Double {
+        p.totalToday == 0 ? 0 : Double(p.doneToday) / Double(p.totalToday)
+    }
+
+    var body: some View {
+        switch family {
+        case .accessoryCircular:
+            ZStack {
+                AccessoryWidgetBackground()
+                Gauge(value: progress) { Image(systemName: "flame.fill") }
+                    .gaugeStyle(.accessoryCircularCapacity)
+                Text("\(p.streak)").font(.system(size: 15, weight: .bold)).offset(y: 1)
+            }
+        case .accessoryRectangular:
+            VStack(alignment: .leading, spacing: 2) {
+                Label("\(p.streak) " + (p.isArabic ? "يوم" : "days"), systemImage: "flame.fill").font(.headline)
+                Text((p.isArabic ? "اليوم " : "Today ") + "\(p.doneToday)/\(p.totalToday)").font(.caption)
+            }
+        default:
+            VStack(spacing: 6) {
+                ZStack {
+                    Circle().stroke(Color.white.opacity(0.12), lineWidth: 8)
+                    Circle().trim(from: 0, to: max(0.02, progress))
+                        .stroke(LinearGradient(colors: [Color.orange, Color(red: 1, green: 0.35, blue: 0.2)],
+                                               startPoint: .top, endPoint: .bottom),
+                                style: StrokeStyle(lineWidth: 8, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                    VStack(spacing: 0) {
+                        Text("🔥").font(.system(size: 18))
+                        Text("\(p.streak)").font(wf(24, .heavy)).foregroundStyle(.white)
+                    }
+                }
+                .frame(width: 84, height: 84)
+                Text(p.totalToday == 0 ? (p.isArabic ? "ما عندك روتين اليوم" : "No routines today")
+                                       : (p.isArabic ? "اليوم \(p.doneToday) من \(p.totalToday)" : "Today \(p.doneToday) of \(p.totalToday)"))
+                    .font(wf(11, .semibold)).foregroundStyle(.white.opacity(0.7))
+                    .lineLimit(1).minimumScaleFactor(0.7)
+            }
+            .environment(\.layoutDirection, p.isArabic ? .rightToLeft : .leftToRight)
+        }
+    }
+}
+
+// MARK: - Next subscription renewal
+
+struct SubscriptionWidget: Widget {
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: WidgetShared.subsKind, provider: TasksProvider()) { entry in
+            SubscriptionView(p: entry.payload)
+                .containerBackground(for: .widget) {
+                    LinearGradient(colors: [Color(red: 0.07, green: 0.05, blue: 0.16), night], startPoint: .topLeading, endPoint: .bottomTrailing)
+                }
+        }
+        .configurationDisplayName("MNLOVO · Subscriptions")
+        .description("Next renewal · أقرب تجديد")
+        .supportedFamilies([.systemSmall, .systemMedium, .accessoryRectangular])
+    }
+}
+
+struct SubscriptionView: View {
+    var p: WidgetShared.Payload
+    @Environment(\.widgetFamily) private var family
+
+    var body: some View {
+        if p.subTitle.isEmpty {
+            VStack(spacing: 6) {
+                Image(systemName: "creditcard").font(.system(size: 22)).foregroundStyle(indigo)
+                Text(p.isArabic ? "ما عندك اشتراكات" : "No subscriptions").font(wf(12, .semibold)).foregroundStyle(.white.opacity(0.7))
+            }
+        } else if family == .accessoryRectangular {
+            VStack(alignment: .leading, spacing: 2) {
+                Label(p.subTitle, systemImage: "creditcard.fill").font(.headline).lineLimit(1)
+                if let d = p.subDue { Text(d, style: .relative).font(.caption) }
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 6) {
+                    Image(systemName: "creditcard.fill").font(.system(size: 12, weight: .bold)).foregroundStyle(indigo)
+                    Text(p.isArabic ? "الجاي" : "Next up").font(wf(11, .bold)).foregroundStyle(.white.opacity(0.6))
+                    Spacer()
+                }
+                Text(p.subTitle).font(wf(16, .heavy)).foregroundStyle(.white).lineLimit(1).minimumScaleFactor(0.7)
+                if let d = p.subDue {
+                    Text(d, style: .relative)
+                        .font(wf(13, .semibold)).foregroundStyle(teal)
+                        .environment(\.layoutDirection, .leftToRight)
+                }
+                Spacer(minLength: 0)
+                HStack(alignment: .firstTextBaseline) {
+                    Text(p.subPrice).font(wf(15, .bold)).foregroundStyle(.white)
+                    Spacer()
+                    if !p.subMonthly.isEmpty {
+                        VStack(alignment: .trailing, spacing: 0) {
+                            Text(p.isArabic ? "بالشهر" : "monthly").font(wf(9, .medium)).foregroundStyle(.white.opacity(0.5))
+                            Text(p.subMonthly).font(wf(12, .bold)).foregroundStyle(.white.opacity(0.85))
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .environment(\.layoutDirection, p.isArabic ? .rightToLeft : .leftToRight)
+        }
+    }
+}
+
+// MARK: - One-tap open
+
+struct QuickOpenWidget: Widget {
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: WidgetShared.openKind, provider: TasksProvider()) { entry in
+            QuickOpenView(isArabic: entry.payload.isArabic)
+                .containerBackground(for: .widget) {
+                    LinearGradient(colors: [night, Color(red: 0.05, green: 0.10, blue: 0.12)], startPoint: .top, endPoint: .bottom)
+                }
+        }
+        .configurationDisplayName("MNLOVO · Quick open")
+        .description("Open the vault · فتح الخزنة")
+        .supportedFamilies([.systemSmall, .accessoryCircular])
+    }
+}
+
+struct QuickOpenView: View {
+    var isArabic: Bool
+    @Environment(\.widgetFamily) private var family
+
+    var body: some View {
+        if family == .accessoryCircular {
+            ZStack {
+                AccessoryWidgetBackground()
+                Image(systemName: "lock.fill").font(.system(size: 18, weight: .bold))
+            }
+        } else {
+            VStack(spacing: 8) {
+                ZStack {
+                    Circle().fill(teal.opacity(0.14)).frame(width: 56, height: 56)
+                    Circle().strokeBorder(LinearGradient(colors: [teal, indigo], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1.5)
+                        .frame(width: 56, height: 56)
+                    Image(systemName: "lock.fill").font(.system(size: 22, weight: .bold)).foregroundStyle(teal)
+                }
+                Text("MNLOVO SAVER").font(wf(10, .heavy)).foregroundStyle(.white.opacity(0.8)).tracking(1)
+                Text(isArabic ? "اضغط لفتح الخزنة" : "Tap to open the vault")
+                    .font(wf(10, .medium)).foregroundStyle(.white.opacity(0.5))
+                    .lineLimit(1).minimumScaleFactor(0.7)
+            }
+        }
     }
 }

@@ -90,7 +90,7 @@ struct VaultFile: Codable, Identifiable, Hashable {
 }
 
 enum ReminderKind: String, Codable, CaseIterable, Identifiable {
-    case appointment, task, homework, routine
+    case appointment, task, homework, routine, subscription
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -98,6 +98,7 @@ enum ReminderKind: String, Codable, CaseIterable, Identifiable {
         case .task: return tr("مهمة", "Task")
         case .homework: return tr("واجب", "Homework")
         case .routine: return tr("روتين", "Routine")
+        case .subscription: return tr("اشتراك", "Subscription")
         }
     }
     var icon: String {
@@ -106,7 +107,56 @@ enum ReminderKind: String, Codable, CaseIterable, Identifiable {
         case .task: return "checklist"
         case .homework: return "book.closed.fill"
         case .routine: return "repeat.circle.fill"
+        case .subscription: return "creditcard.fill"
         }
+    }
+}
+
+/// A paid subscription that renews on its own: price, how often, and how early to warn.
+struct Subscription: Codable, Hashable {
+    enum Cycle: String, Codable, CaseIterable, Identifiable {
+        case weekly, monthly, quarterly, yearly
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .weekly: return tr("أسبوعي", "Weekly")
+            case .monthly: return tr("شهري", "Monthly")
+            case .quarterly: return tr("كل ٣ شهور", "Quarterly")
+            case .yearly: return tr("سنوي", "Yearly")
+            }
+        }
+        /// How many of these fit in a month — used for the monthly total.
+        var perMonth: Double {
+            switch self {
+            case .weekly: return 52.0 / 12.0
+            case .monthly: return 1
+            case .quarterly: return 1.0 / 3.0
+            case .yearly: return 1.0 / 12.0
+            }
+        }
+        func next(after d: Date) -> Date {
+            var c = DateComponents()
+            switch self {
+            case .weekly: c.day = 7
+            case .monthly: c.month = 1
+            case .quarterly: c.month = 3
+            case .yearly: c.year = 1
+            }
+            return Calendar.current.date(byAdding: c, to: d) ?? d
+        }
+    }
+
+    var price: Double = 0
+    var currency: String = "AED"
+    var cycle: Cycle = .monthly
+    var warnDaysBefore: Int = 3
+    /// Cancel instead of renew — shows a nudge when it's close.
+    var planToCancel = false
+
+    var monthlyCost: Double { price * cycle.perMonth }
+    var priceText: String {
+        let n = price.truncatingRemainder(dividingBy: 1) == 0 ? String(Int(price)) : String(format: "%.2f", price)
+        return "\(n) \(currency)"
     }
 }
 
@@ -234,8 +284,10 @@ struct Reminder: Codable, Identifiable, Hashable {
     var calendarEventID: String?
     var created = Date()
     var routine: Routine?
+    var subscription: Subscription?
 
     var isRoutine: Bool { kind == .routine && routine != nil }
+    var isSubscription: Bool { kind == .subscription && subscription != nil }
 
     var displayTitle: String {
         sensitivity == .secret ? tr("🔒 تذكير سري", "🔒 Secret reminder") : title

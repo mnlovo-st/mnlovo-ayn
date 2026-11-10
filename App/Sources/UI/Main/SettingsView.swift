@@ -18,7 +18,7 @@ struct SettingsView: View {
     @State private var secretTaps = 0
 
     enum SettingsSheet: String, Identifiable {
-        case password, section, twoFA, recovery, duress, intruders, cloudSetup, backup, telegram, delete, desk, cipher
+        case password, section, twoFA, recovery, duress, intruders, cloudSetup, backup, telegram, delete, desk, cipher, legacy
         var id: String { rawValue }
     }
 
@@ -105,6 +105,11 @@ struct SettingsView: View {
                         row("paperplane.fill", tr("نسخة تلقائية في تيليجرام", "Auto-post to Telegram"),
                             value: TelegramService.shared.isReady ? tr("مفعّلة", "On") : tr("مطفأة", "Off"),
                             tint: Color(hex: 0x2AABEE)) { sheet = .telegram }
+                        divider
+                        row("heart.text.square.fill", tr("نبض الحياة (الأمانة)", "Heartbeat (legacy)"),
+                            value: LegacyService.shared.status.isArmed ? tr("شغّالة", "Armed")
+                                 : (UserDefaults.standard.bool(forKey: "legacy.wanted") ? tr("أكمل الإعداد", "Finish setup") : tr("مطفأة", "Off")),
+                            tint: Color(hex: 0xFF5FA2)) { sheet = .legacy }
                     }
                 }
 
@@ -187,6 +192,7 @@ struct SettingsView: View {
                 case .delete: DeleteAccountSheet()
                 case .desk: SupportDeskView()
                 case .cipher: CipherToolView()
+                case .legacy: LegacyView()
                 }
             }
             .environmentObject(state)

@@ -26,7 +26,7 @@ jobs:
             -d '{"p_email":"keepalive@mnlovo.invalid","p_phone_hash":"keepalive"}'
           echo
       - name: Touch the Telegram bot server
-        run: curl -fsS --retry 3 "$URL/functions/v1/saver-telegram"; echo
+        run: curl -fsS --retry 3 "$URL/functions/v1/saver-telegram?cron=1"; echo
       - name: Keep this schedule switched on
         env:
           GH_TOKEN: ${{ github.token }}

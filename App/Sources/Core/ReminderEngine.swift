@@ -81,6 +81,7 @@ enum ReminderEngine {
 
     static func plan(for r: Reminder, now: Date = Date()) -> [Planned] {
         if r.isRoutine { return routinePlan(for: r, now: now) }
+        if let sub = r.subscription, r.kind == .subscription { return subscriptionPlan(for: r, sub: sub, now: now) }
         guard !r.done else { return [] }
         let name = r.displayTitle
         var out: [Planned] = []
@@ -127,6 +128,26 @@ enum ReminderEngine {
         return out.filter { $0.date > now.addingTimeInterval(5) }.sorted { $0.date < $1.date }
     }
 
+    /// Subscriptions renew by themselves, so the warnings come *before* the charge, not after.
+    private static func subscriptionPlan(for r: Reminder, sub: Subscription, now: Date) -> [Planned] {
+        guard !r.done else { return [] }
+        let name = r.displayTitle
+        var out: [Planned] = []
+        let warn = max(1, sub.warnDaysBefore)
+        for days in Set([warn, 1]).sorted(by: >) {
+            let when = r.due.addingTimeInterval(-Double(days) * 86400)
+            let body = sub.planToCancel
+                ? tr("باقي \(days) يوم على التجديد — كنت تبي تلغيه. الحين وقته ✂️", "\(days) day(s) to renewal — you wanted to cancel. Now's the time ✂️")
+                : tr("\(name) بيتجدد بعد \(days) يوم بـ \(sub.priceText).", "\(name) renews in \(days) day(s) for \(sub.priceText).")
+            out.append(Planned(date: when, title: name, body: body))
+        }
+        out.append(Planned(date: r.due, title: name,
+                           body: sub.planToCancel
+                                ? tr("اليوم التجديد! إذا ما ألغيته بينخصم \(sub.priceText) ⚠️", "Renews today! If you didn't cancel, \(sub.priceText) will be charged ⚠️")
+                                : tr("تجدد اليوم بـ \(sub.priceText) 💳", "Renewed today for \(sub.priceText) 💳")))
+        return out.filter { $0.date > now.addingTimeInterval(5) }.sorted { $0.date < $1.date }
+    }
+
     /// Rebuilds every pending notification from both vault spaces (iOS allows 64 pending).
     static func rescheduleAll() {
         let center = UNUserNotificationCenter.current()
@@ -160,7 +181,17 @@ enum ReminderEngine {
         let space = VaultSpace(rawValue: userInfo["space"] as? String ?? "real") ?? .real
         switch action {
         case "DONE":
-            RemindersStore.update(space, rid) { $0.done = true; $0.doneAt = Date(); $0.snoozedUntil = nil }
+            RemindersStore.update(space, rid) { r in
+                // A subscription doesn't finish — it rolls on to the next charge.
+                if let sub = r.subscription, r.kind == .subscription {
+                    r.due = sub.cycle.next(after: r.due)
+                    r.snoozedUntil = nil
+                } else {
+                    r.done = true
+                    r.doneAt = Date()
+                    r.snoozedUntil = nil
+                }
+            }
         case "SNOOZE":
             RemindersStore.update(space, rid) { $0.snoozedUntil = Date().addingTimeInterval(3600) }
         case "ROUTINE_DONE":
@@ -231,7 +262,30 @@ enum WidgetBridge {
                               title: $0.sensitivity == .secret ? tr("🔒 مهمة سرية", "🔒 Secret task") : $0.title,
                               due: $0.due, icon: $0.kind.icon, secret: $0.sensitivity == .secret)
         }
-        WidgetShared.save(WidgetShared.Payload(items: Array(items), isArabic: AppLanguage.current == .ar, updated: now))
+        var payload = WidgetShared.Payload()
+        payload.items = Array(items)
+        payload.isArabic = AppLanguage.current == .ar
+        payload.updated = now
+
+        // Routine streak + today's progress
+        let all = RemindersStore.load(.real)
+        let routines = all.filter { $0.isRoutine && !($0.routine?.finished ?? false) }
+        let todays = routines.filter { $0.routine?.scheduledToday ?? false }
+        payload.totalToday = todays.count
+        payload.doneToday = todays.filter { $0.routine?.isDone(on: now) ?? false }.count
+        payload.streak = routines.compactMap { $0.routine?.streak(now: now) }.max() ?? 0
+
+        // Next subscription renewal and the monthly total in its currency
+        let subs = all.filter { $0.isSubscription && !$0.done }.sorted { $0.due < $1.due }
+        if let n = subs.first, let s = n.subscription {
+            payload.subTitle = n.sensitivity == .secret ? tr("🔒 اشتراك", "🔒 Subscription") : n.title
+            payload.subDue = n.due
+            payload.subPrice = s.priceText
+            let monthly = subs.compactMap { $0.subscription }.filter { $0.currency == s.currency }.reduce(0) { $0 + $1.monthlyCost }
+            payload.subMonthly = Subscription.money(monthly, s.currency)
+        }
+
+        WidgetShared.save(payload)
         WidgetCenter.shared.reloadAllTimelines()
     }
 }

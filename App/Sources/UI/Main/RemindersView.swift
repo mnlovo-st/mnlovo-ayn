@@ -14,11 +14,19 @@ struct RemindersView: View {
 
     private var now: Date { Date() }
 
-    private var oneOff: [Reminder] { state.reminders.filter { !$0.isRoutine } }
+    private var oneOff: [Reminder] { state.reminders.filter { !$0.isRoutine && !$0.isSubscription } }
+    private var subscriptions: [Reminder] { state.reminders.filter { $0.isSubscription && !$0.done }.sorted { $0.due < $1.due } }
     private var routines: [Reminder] { state.reminders.filter { $0.isRoutine && !($0.routine?.finished ?? false) } }
     private var upcoming: [Reminder] { oneOff.filter { !$0.done && $0.due >= now }.sorted { $0.due < $1.due } }
     private var overdue: [Reminder] { oneOff.filter { !$0.done && $0.due < now }.sorted { $0.due < $1.due } }
     private var finished: [Reminder] { oneOff.filter { $0.done }.sorted { ($0.doneAt ?? $0.due) > ($1.doneAt ?? $1.due) } }
+
+    private func newSubscription() -> Reminder {
+        var r = Reminder(title: "", due: Calendar.current.date(byAdding: .month, value: 1, to: Date()) ?? Date())
+        r.kind = .subscription
+        r.subscription = Subscription()
+        return r
+    }
 
     private func newRoutine() -> Reminder {
         var r = Reminder(title: "", due: Date())
@@ -49,6 +57,9 @@ struct RemindersView: View {
                         Button { editing = newRoutine() } label: {
                             Label(tr("روتين يومي / أسبوعي", "Daily / weekly routine"), systemImage: "repeat.circle.fill")
                         }
+                        Button { editing = newSubscription() } label: {
+                            Label(tr("اشتراك (نتفلكس، جيم…)", "Subscription (Netflix, gym…)"), systemImage: "creditcard.fill")
+                        }
                         Button { showIntro = true } label: { Label(tr("كيف تشتغل التذكيرات؟", "How do reminders work?"), systemImage: "play.circle") }
                     } label: {
                         Image(systemName: "plus")
@@ -64,6 +75,9 @@ struct RemindersView: View {
                 if !routines.isEmpty {
                     RoutineStrip(routines: routines, onEdit: { editing = $0 }, onAdd: { editing = newRoutine() })
                 }
+
+                SubscriptionsSummary(subs: subscriptions) { editing = $0 }
+                    .padding(.horizontal, 20)
 
                 Picker("", selection: $segment) {
                     Text(tr("القادمة (\(upcoming.count))", "Upcoming (\(upcoming.count))")).tag(0)
@@ -263,30 +277,35 @@ struct ReminderEditor: View {
                 VStack(spacing: 14) {
                     SheetHeader(title: isNew ? tr("تذكير جديد", "New reminder") : tr("تعديل التذكير", "Edit reminder")) { dismiss() }
 
-                    HStack(spacing: 8) {
-                        ForEach(ReminderKind.allCases) { k in
-                            Button {
-                                withAnimation(.spring(response: 0.3)) {
-                                    reminder.kind = k
-                                    if k == .routine && reminder.routine == nil { reminder.routine = Routine() }
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(ReminderKind.allCases) { k in
+                                Button {
+                                    withAnimation(.spring(response: 0.3)) {
+                                        reminder.kind = k
+                                        if k == .routine && reminder.routine == nil { reminder.routine = Routine() }
+                                        if k == .subscription && reminder.subscription == nil { reminder.subscription = Subscription() }
+                                    }
+                                    FX.toggle()
+                                } label: {
+                                    VStack(spacing: 6) {
+                                        Image(systemName: k.icon).font(.system(size: 20, weight: .semibold))
+                                        Text(k.title).font(Theme.font(12, .bold)).lineLimit(1).minimumScaleFactor(0.7)
+                                    }
+                                    .foregroundStyle(reminder.kind == k ? Theme.bg : Theme.sub)
+                                    .frame(width: 80).frame(height: 70)
+                                    .background(RoundedRectangle(cornerRadius: 16)
+                                        .fill(reminder.kind == k ? AnyShapeStyle(Theme.gradient) : AnyShapeStyle(Theme.surface)))
                                 }
-                                FX.toggle()
-                            } label: {
-                                VStack(spacing: 6) {
-                                    Image(systemName: k.icon).font(.system(size: 20, weight: .semibold))
-                                    Text(k.title).font(Theme.font(12, .bold)).lineLimit(1).minimumScaleFactor(0.7)
-                                }
-                                .foregroundStyle(reminder.kind == k ? Theme.bg : Theme.sub)
-                                .frame(maxWidth: .infinity).frame(height: 70)
-                                .background(RoundedRectangle(cornerRadius: 16)
-                                    .fill(reminder.kind == k ? AnyShapeStyle(Theme.gradient) : AnyShapeStyle(Theme.surface)))
+                                .buttonStyle(PressScale())
                             }
-                            .buttonStyle(PressScale())
                         }
+                        .padding(.horizontal, 2)
                     }
 
                     AYNField(title: reminder.kind == .routine ? tr("الاسم (مثلاً: اشرب ماي، دواء، ورد)", "Name (e.g. drink water, meds, reading)")
-                                                              : tr("العنوان (مثلاً: واجب قواعد البيانات)", "Title (e.g. Database homework)"),
+                                  : reminder.kind == .subscription ? tr("الاشتراك (مثلاً: نتفلكس، الجيم)", "Subscription (e.g. Netflix, gym)")
+                                  : tr("العنوان (مثلاً: واجب قواعد البيانات)", "Title (e.g. Database homework)"),
                              icon: "pencil", text: $reminder.title, focus: $focus, id: .title)
 
                     if reminder.kind == .routine {
@@ -295,23 +314,29 @@ struct ReminderEditor: View {
                             .transition(.opacity.combined(with: .move(edge: .bottom)))
                     } else {
                         VStack(alignment: .leading, spacing: 8) {
-                            SectionTitle(text: tr("موعد التسليم", "Due"), icon: "calendar")
+                            SectionTitle(text: reminder.kind == .subscription ? tr("تاريخ التجديد الجاي", "Next renewal") : tr("موعد التسليم", "Due"), icon: "calendar")
                             DatePicker("", selection: $reminder.due, displayedComponents: [.date, .hourAndMinute])
                                 .datePickerStyle(.graphical)
                                 .tint(Theme.accent)
                         }
                         .glass(12)
 
-                        VStack(alignment: .leading, spacing: 10) {
-                            SectionTitle(text: tr("في آخر يوم ذكّرني كل", "On the last day, remind me every"), icon: "repeat")
-                            Picker("", selection: $reminder.nagHours) {
-                                ForEach([1, 2, 3, 4], id: \.self) { h in Text(tr("\(h) ساعة", "\(h)h")).tag(h) }
+                        if reminder.kind == .subscription {
+                            SubscriptionEditorSection(sub: Binding(get: { reminder.subscription ?? Subscription() },
+                                                                   set: { reminder.subscription = $0 }))
+                                .transition(.opacity.combined(with: .move(edge: .bottom)))
+                        } else {
+                            VStack(alignment: .leading, spacing: 10) {
+                                SectionTitle(text: tr("في آخر يوم ذكّرني كل", "On the last day, remind me every"), icon: "repeat")
+                                Picker("", selection: $reminder.nagHours) {
+                                    ForEach([1, 2, 3, 4], id: \.self) { h in Text(tr("\(h) ساعة", "\(h)h")).tag(h) }
+                                }
+                                .pickerStyle(.segmented)
                             }
-                            .pickerStyle(.segmented)
-                        }
-                        .glass(14)
+                            .glass(14)
 
-                        schedulePreview
+                            schedulePreview
+                        }
                     }
 
                     VStack(alignment: .leading, spacing: 8) {
