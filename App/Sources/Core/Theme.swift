@@ -134,9 +134,15 @@ enum Haptics {
 // deleting). Taps, typing and toggles are silent — they get a light haptic instead.
 
 enum SFX: String, CaseIterable {
-    case intro, unlock, lock, success, error, delete, notify
+    case intro, unlock, lock, success, error, delete, notify, anger, lockout
     case eyeOpen = "eye_open"
+    case errSoft = "err_soft", errPassword = "err_password", errCode = "err_code"
+
+    var isError: Bool { [.error, .errSoft, .errPassword, .errCode, .anger, .lockout].contains(self) }
 }
+
+/// Where an error happened — each place has its own sound.
+enum ErrorKind { case general, passcode, password, code, anger, lockout }
 
 final class SoundFX {
     static let shared = SoundFX()
@@ -149,6 +155,7 @@ final class SoundFX {
         for s in SFX.allCases {
             if let url = Bundle.main.url(forResource: s.rawValue, withExtension: "wav"),
                let p = try? AVAudioPlayer(contentsOf: url) {
+                p.enableRate = true
                 p.prepareToPlay()
                 players[s] = p
             }
@@ -157,14 +164,33 @@ final class SoundFX {
 
     var enabled: Bool { UserDefaults.standard.object(forKey: "fx.sound") as? Bool ?? true }
 
+    private var lastError = Date.distantPast
+
     func play(_ s: SFX, volume: Float = 0.55) {
         guard enabled, let p = players[s] else { return }
-        // Never stack the same sound within 0.4 s.
+        // Never stack the same sound within 0.4 s, and never two error sounds on top of each other.
         if let last = lastPlayed[s], Date().timeIntervalSince(last) < 0.4 { return }
+        if s.isError {
+            if Date().timeIntervalSince(lastError) < 0.5 { return }
+            lastError = Date()
+        }
         lastPlayed[s] = Date()
         p.volume = volume
+        // A touch of pitch variation so repeated errors never sound identical.
+        p.rate = s.isError && s != .anger ? Float.random(in: 0.94...1.06) : 1
         p.currentTime = 0
         p.play()
+    }
+
+    func playError(_ kind: ErrorKind) {
+        switch kind {
+        case .general: play(.error, volume: 0.5)
+        case .passcode: play(.errSoft, volume: 0.6)
+        case .password: play(.errPassword, volume: 0.55)
+        case .code: play(.errCode, volume: 0.55)
+        case .anger: play(.anger, volume: 0.7)
+        case .lockout: play(.lockout, volume: 0.6)
+        }
     }
 }
 
@@ -174,5 +200,5 @@ enum FX {
     static func toggle() { Haptics.selection() }
     static func key() { }
     static func success() { SoundFX.shared.play(.success); Haptics.success() }
-    static func error() { SoundFX.shared.play(.error, volume: 0.5); Haptics.error() }
+    static func error(_ kind: ErrorKind = .general) { SoundFX.shared.playError(kind); Haptics.error() }
 }

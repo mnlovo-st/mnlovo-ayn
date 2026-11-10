@@ -403,6 +403,7 @@ struct TelegramSetupView: View {
     @State private var showChoice = false
     @State private var exclusive = false
     @State private var shareURL: URL?
+    @State private var baseline: Set<Int64>?
 
     private let tg = TelegramService.shared
     private let blue = TelegramService.blue
@@ -505,6 +506,7 @@ struct TelegramSetupView: View {
                     .font(Theme.font(15, .bold)).foregroundStyle(Theme.text).multilineTextAlignment(.center)
                 Text(tr("أول ما تضغطه ارجع هنا، نكمل لحالنا.", "As soon as you tap it, come back here — we take it from there."))
                     .font(Theme.font(13)).foregroundStyle(Theme.sub).multilineTextAlignment(.center)
+                stuckHint
             }
             if let error { Text(error).font(Theme.font(13, .semibold)).foregroundStyle(Theme.danger).multilineTextAlignment(.center) }
             PrimaryButton(title: waitingSince == nil ? tr("ربط تيليجرام بضغطة", "Link Telegram in one tap") : tr("افتح تيليجرام مرة ثانية", "Open Telegram again"),
@@ -551,6 +553,7 @@ struct TelegramSetupView: View {
                         Text(tr("ننتظر تيليجرام… اختر القروب/القناة واضغط «إضافة» وارجع هنا.", "Waiting for Telegram… pick the group/channel, tap “Add”, then come back."))
                             .font(Theme.font(12, .semibold)).foregroundStyle(Theme.sub)
                     }
+                    stuckHint
                 }
                 DisclosureGroup {
                     VStack(alignment: .leading, spacing: 6) {
@@ -581,7 +584,8 @@ struct TelegramSetupView: View {
                 option("paperclip", tr("الملفات (الاسم والحجم بس)", "Files (name & size only)"), $settings.files)
                 option("pencil", tr("التعديلات كمان", "Edits too"), $settings.updates)
                 option("shield.lefthalf.filled", tr("العناصر 🟡 الحساسة", "🟡 Sensitive items"), $settings.includeSensitive)
-                option("eye.trianglebadge.exclamationmark", tr("النصوص مشوّشة (تنكشف باللمس)", "Blurred text (tap to reveal)"), $settings.spoiler)
+                option("exclamationmark.octagon.fill", tr("حتى العناصر 🔴 السرية جداً", "Even 🔴 top-secret items"), $settings.includeSecret)
+                option("eye.trianglebadge.exclamationmark", tr("الرسالة كلها مشوّشة (تنكشف باللمس)", "Whole message blurred (tap to reveal)"), $settings.spoiler)
             }
             .glass(14)
 
@@ -593,14 +597,43 @@ struct TelegramSetupView: View {
             var s = tg.settings
             s.enabled = new.enabled; s.accounts = new.accounts; s.passwords = new.passwords; s.reminders = new.reminders
             s.notes = new.notes; s.files = new.files; s.updates = new.updates; s.includeSensitive = new.includeSensitive
-            s.spoiler = new.spoiler
+            s.spoiler = new.spoiler; s.includeSecret = new.includeSecret
             tg.settings = s
         }
     }
 
+    /// If Telegram said "linked" but the app hasn't noticed yet.
+    private var stuckHint: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { ctx in
+            if let since = waitingSince, ctx.date.timeIntervalSince(since) > 12 {
+                VStack(spacing: 8) {
+                    Text(tr("تيليجرام قال «تم الربط» وهنا بعده ينتظر؟", "Telegram said “linked” but this is still waiting?"))
+                        .font(Theme.font(12, .semibold)).foregroundStyle(Theme.sub)
+                    HStack(spacing: 10) {
+                        Button {
+                            Task { await refresh() }
+                        } label: {
+                            Label(tr("تحديث الحين", "Refresh now"), systemImage: "arrow.clockwise")
+                                .font(Theme.font(13, .bold)).foregroundStyle(blue)
+                                .padding(.horizontal, 14).frame(height: 34)
+                                .background(Capsule().fill(blue.opacity(0.14)))
+                        }
+                        Button {
+                            withAnimation { waitingSince = nil }
+                        } label: {
+                            Text(tr("إلغاء", "Cancel")).font(Theme.font(13, .semibold)).foregroundStyle(Theme.sub)
+                        }
+                    }
+                    SupportButton()
+                }
+                .transition(.opacity)
+            }
+        }
+    }
+
     private var privacyNote: some View {
-        Label(tr("رسائل البوت في تيليجرام مو مشفّرة طرف لطرف. الأشياء 🔴 السرية جداً ما تنرسل أبداً، وكلمات السر ما تنرسل إلا إذا فعّلتها (وتطلع مخفية تحت غطاء). الخزنة الوهمية ما ترسل شي.",
-                 "Bot messages in Telegram aren't end-to-end encrypted. 🔴 Top-secret items are never sent, passwords only if you turn it on (hidden under a spoiler). The decoy vault never posts."),
+        Label(tr("رسائل البوت في تيليجرام مو مشفّرة طرف لطرف. افتراضياً ينرسل كل شي (حتى كلمات السر و🟡 الحساسة) والرسالة كلها مشوّشة لين تلمسها. 🔴 السري جداً ما ينرسل إلا إذا فعّلته. الخزنة الوهمية ما ترسل شي.",
+                 "Bot messages in Telegram aren't end-to-end encrypted. By default everything is sent (passwords and 🟡 sensitive too), the whole message blurred until tapped. 🔴 top-secret only if you turn it on. The decoy vault never posts."),
               systemImage: "exclamationmark.shield.fill")
             .font(Theme.font(12, .medium)).foregroundStyle(Theme.warn)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -684,7 +717,13 @@ struct TelegramSetupView: View {
         catch { self.error = error.localizedDescription; FX.error() }
     }
 
-    private func addChannel() { open(tg.channelLink()) }
+    private func addChannel() {
+        Task {
+            busy = "channel"; defer { busy = nil }
+            do { open(try await tg.prepareChannel()); error = nil }
+            catch { self.error = error.localizedDescription; FX.error() }
+        }
+    }
 
     private func addPerson() async {
         busy = "person"; defer { busy = nil }
@@ -698,12 +737,15 @@ struct TelegramSetupView: View {
 
     private func refresh() async {
         guard tg.cloudReady, !state.isDecoy else { return }
-        let before = Set(settings.targets.map(\.id))
         guard let list = try? await tg.refresh() else { return }
         let fresh = tg.settings
         withAnimation(.spring(response: 0.5)) { settings = fresh }
+        let ids = Set(list.map(\.id))
+        defer { baseline = ids }
+        // The first load from the server is the baseline; only chats linked after it get celebrated.
+        guard let before = baseline else { return }
         let added = list.filter { !before.contains($0.id) }
-        if let first = added.first, waitingSince != nil || !before.isEmpty {
+        if let first = added.first {
             celebrate(first)
             let isBotChat = first.type == "private" && !first.isFriend
             if isBotChat && list.count == 1 {
@@ -722,9 +764,8 @@ struct TelegramSetupView: View {
         while !Task.isCancelled, Date().timeIntervalSince(since) < 300 {
             await pause(2.5)
             if Task.isCancelled { return }
-            let before = settings.targets.count
             await refresh()
-            if settings.targets.count > before { return }
+            if waitingSince == nil { return }
             if waitingSince != nil { withAnimation { eye = eye == .lookUp ? .thinking : .lookUp } }
         }
         withAnimation { waitingSince = nil }

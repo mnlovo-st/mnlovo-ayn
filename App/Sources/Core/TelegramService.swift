@@ -52,13 +52,15 @@ final class TelegramService {
         var enabled = false
         var targets: [Target] = []
         var accounts = true
-        var passwords = false
+        var passwords = true
         var reminders = true
         var notes = true
         var files = true
         var updates = false
-        var includeSensitive = false
-        /// Values arrive blurred (Telegram spoiler) until tapped.
+        var includeSensitive = true
+        /// 🔴 top-secret items too (off unless the user turns it on).
+        var includeSecret = false
+        /// The whole message arrives blurred (Telegram spoiler) until tapped.
         var spoiler = true
 
         init() {}
@@ -67,12 +69,13 @@ final class TelegramService {
             enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
             targets = try c.decodeIfPresent([Target].self, forKey: .targets) ?? []
             accounts = try c.decodeIfPresent(Bool.self, forKey: .accounts) ?? true
-            passwords = try c.decodeIfPresent(Bool.self, forKey: .passwords) ?? false
+            passwords = try c.decodeIfPresent(Bool.self, forKey: .passwords) ?? true
             reminders = try c.decodeIfPresent(Bool.self, forKey: .reminders) ?? true
             notes = try c.decodeIfPresent(Bool.self, forKey: .notes) ?? true
             files = try c.decodeIfPresent(Bool.self, forKey: .files) ?? true
             updates = try c.decodeIfPresent(Bool.self, forKey: .updates) ?? false
-            includeSensitive = try c.decodeIfPresent(Bool.self, forKey: .includeSensitive) ?? false
+            includeSensitive = try c.decodeIfPresent(Bool.self, forKey: .includeSensitive) ?? true
+            includeSecret = try c.decodeIfPresent(Bool.self, forKey: .includeSecret) ?? false
             spoiler = try c.decodeIfPresent(Bool.self, forKey: .spoiler) ?? true
         }
     }
@@ -93,7 +96,13 @@ final class TelegramService {
     var settings: Settings {
         get {
             guard let d = UserDefaults.standard.data(forKey: settingsKey),
-                  let s = try? JSONDecoder().decode(Settings.self, from: d) else { return Settings() }
+                  var s = try? JSONDecoder().decode(Settings.self, from: d) else { return Settings() }
+            if !UserDefaults.standard.bool(forKey: "tg.defaults.v2") {
+                // New defaults: send everything (passwords and 🟡 sensitive items too), fully blurred.
+                UserDefaults.standard.set(true, forKey: "tg.defaults.v2")
+                s.passwords = true; s.includeSensitive = true; s.spoiler = true
+                if let e = try? JSONEncoder().encode(s) { UserDefaults.standard.set(e, forKey: settingsKey) }
+            }
             return s
         }
         set {
@@ -141,6 +150,17 @@ final class TelegramService {
     }
 
     /// Telegram shows the user's channels; the bot is added as an admin that can only post.
+    /// Tells the server this account is about to add a channel, so the channel lands on the right account.
+    func prepareChannel() async throws -> URL {
+        do {
+            _ = try await call("link", ["kind": "channel"])
+        } catch SupabaseClient.SBError.server(let m) where m.contains("need_private") || m.contains("409") {
+            throw TGError.server(tr("اربط محادثة البوت أول (زر «ربط تيليجرام»)، وبعدها أضف القناة.",
+                                    "Link the bot chat first (“Link Telegram”), then add the channel."))
+        }
+        return channelLink()
+    }
+
     func channelLink() -> URL {
         URL(string: "https://t.me/\(Self.botUsername)?startchannel&admin=post_messages")!
     }
@@ -199,7 +219,7 @@ final class TelegramService {
         guard space == .real, isReady else { return }
         let s = settings
         func allowed(_ level: Sensitivity) -> Bool {
-            level == .normal || (level == .sensitive && s.includeSensitive)
+            level == .normal || (level == .sensitive && s.includeSensitive) || (level == .secret && s.includeSecret)
         }
         var text: String?
         switch event {
@@ -213,7 +233,8 @@ final class TelegramService {
         case .fileAdded(let f) where s.files && allowed(f.sensitivity): text = format(file: f)
         default: text = nil
         }
-        guard let text else { return }
+        guard var text else { return }
+        text = wrap(text)
         Task {
             do {
                 let n = try await send(text)
@@ -233,10 +254,14 @@ final class TelegramService {
 
     private let line = "━━━━━━━━━━━━━━"
 
-    /// Escapes a value and, if blurring is on, hides it under a Telegram spoiler.
+    /// With blurring on, the whole message is one spoiler: nothing shows until it's tapped.
+    func wrap(_ html: String) -> String {
+        settings.spoiler ? "<tg-spoiler>\(html)</tg-spoiler>" : html
+    }
+
+    /// Escapes a value for Telegram HTML.
     private func v(_ text: String) -> String {
-        let e = Self.esc(text)
-        return settings.spoiler ? "<tg-spoiler>\(e)</tg-spoiler>" : e
+        Self.esc(text)
     }
 
     private func footer() -> String {
@@ -257,10 +282,11 @@ final class TelegramService {
         out += "\n\(line)\n"
         out += tr("<b>التطبيق:</b> ", "<b>App:</b> ") + v(a.service) + "\n"
         if !a.login.isEmpty {
-            out += tr("<b>المستخدم:</b> ", "<b>Login:</b> ") + (s.spoiler ? v(a.login) : "<code>\(Self.esc(a.login))</code>") + "\n"
+            out += tr("<b>المستخدم:</b> ", "<b>Login:</b> ") + "<code>\(Self.esc(a.login))</code>" + "\n"
         }
         if s.passwords && !a.password.isEmpty {
-            out += tr("<b>كلمة السر:</b> ", "<b>Password:</b> ") + "<tg-spoiler>\(Self.esc(a.password))</tg-spoiler>\n"
+            let pw = Self.esc(a.password)
+            out += tr("<b>كلمة السر:</b> ", "<b>Password:</b> ") + (s.spoiler ? "<code>\(pw)</code>" : "<tg-spoiler>\(pw)</tg-spoiler>") + "\n"
         }
         if !a.url.isEmpty { out += tr("<b>الرابط:</b> ", "<b>Link:</b> ") + v(a.url) + "\n" }
         if a.totp != nil { out += tr("<b>2FA:</b> ✓ مفعّل\n", "<b>2FA:</b> ✓ on\n") }
@@ -298,8 +324,8 @@ final class TelegramService {
     }
 
     func testMessage() -> String {
-        tr("👋 <b>رسالة تجريبية من \(Brand.appName)</b>\n\(line)\nكذا بتوصلك الأشياء: \(v("النص مشوّش، اضغط عليه عشان يبين"))\n🔴 الأشياء السرية جداً ما تنرسل أبداً.\n",
-           "👋 <b>Test message from \(Brand.appName)</b>\n\(line)\nThis is how items arrive: \(v("blurred text, tap to reveal"))\n🔴 Top-secret items are never sent.\n")
-            + footer()
+        wrap(tr("👋 <b>رسالة تجريبية من \(Brand.appName)</b>\n\(line)\nكذا بتوصلك الأشياء: الرسالة كلها مشوّشة، اضغط عليها عشان تبين.\n",
+                "👋 <b>Test message from \(Brand.appName)</b>\n\(line)\nThis is how items arrive: the whole message is blurred, tap to reveal.\n")
+             + footer())
     }
 }

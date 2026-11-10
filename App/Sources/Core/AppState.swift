@@ -185,6 +185,26 @@ final class AppState: ObservableObject {
         return "\(mail)|\(tail)|\(f.string(from: birth))"
     }
 
+    nonisolated static func identity2String(phone: String, birth: Date) -> String {
+        let digits = TOTP.westernDigits(phone).filter { $0.isASCII && $0.isNumber }
+        return "v2|\(digits.suffix(9))|\(SupabaseClient.day(birth))"
+    }
+
+    /// Adds the phone+birth-date check to older vaults the first time they open.
+    private func ensureIdentity2(_ prof: Profile) {
+        guard var meta = VaultStorage.loadMeta(.real), meta.identity2Hash == nil else { return }
+        let id2 = Self.identity2String(phone: prof.phone, birth: prof.birthDate)
+        Task.detached(priority: .utility) {
+            let salt = AYNCrypto.randomBytes(16)
+            guard let h = try? AYNCrypto.pbkdf2(id2, salt: salt).rawData else { return }
+            await MainActor.run {
+                meta.identity2Salt = salt
+                meta.identity2Hash = h
+                try? VaultStorage.saveMeta(meta, .real)
+            }
+        }
+    }
+
     // MARK: - Create account
 
     func createAccount(_ n: NewAccountInput) async throws {
@@ -235,6 +255,7 @@ final class AppState: ObservableObject {
             defaults.set(false, forKey: "sec.biometric")
         }
         defaults.set(true, forKey: "backup.dirty")
+        markPassword()
         openVault(.real, key: mk, profile: prof)
         if !n.duressPassword.isEmpty { try? await setupDuress(password: n.duressPassword) }
         Task { await SupabaseClient.shared.registerAccount(email: n.email, phone: n.phone, username: n.username, birth: n.birthDate) }
@@ -273,6 +294,7 @@ final class AppState: ObservableObject {
         async let d = Self.unwrap(password, salt: decoy?.salt, wrapped: decoy?.wrappedByPassword, tag: "pw")
         let (rk, dk) = await (r, d)
         let strong = needsStrongCheck
+        if rk != nil || (dk != nil && decoy != nil) { markPassword() }
         if let rk {
             if !strong { openVault(.real, key: rk); return .unlocked }
             pending = (.real, rk)
@@ -386,6 +408,7 @@ final class AppState: ObservableObject {
         space = s
         profile = prof
         if s == .real && TOTPCarry.load() == nil { TOTPCarry.save(prof.totp) }
+        if s == .real { ensureIdentity2(prof) }
         if RemindersStore.key(s) == nil { RemindersStore.installKey(prof.remindersKey, space: s) }
         accounts = VaultStorage.load([AccountItem].self, "accounts.enc", space: s, key: key) ?? []
         notes = VaultStorage.load([SecureNote].self, "notes.enc", space: s, key: key) ?? []
@@ -647,15 +670,48 @@ final class AppState: ObservableObject {
     }
 
     /// Forgot password, step 1: email + phone + birth date must match the account.
-    func verifyIdentity(email: String, phone: String, birth: Date) async throws {
+    /// If only phone + birth date match (e.g. support changed the email), returns true: the new email
+    /// must then be proven with its code and belong to this account in the cloud.
+    @discardableResult
+    func verifyIdentity(email: String, phone: String, birth: Date) async throws -> Bool {
         guard let meta = VaultStorage.loadMeta(.real),
               let idSalt = meta.identitySalt, let idHash = meta.identityHash else { throw AppError.identityMismatch }
         let identity = Self.identityString(email: email, phone: phone, birth: birth)
         let h = await Task.detached { (try? AYNCrypto.pbkdf2(identity, salt: idSalt))?.rawData }.value
-        guard let h, AYNCrypto.constantTimeEqual(h, idHash) else {
-            registerFailure(.wrongPassword)
-            throw AppError.identityMismatch
+        if let h, AYNCrypto.constantTimeEqual(h, idHash) { return false }
+        if let s2 = meta.identity2Salt, let h2 = meta.identity2Hash, UserDefaults.standard.string(forKey: "cloud.userID") != nil {
+            let id2 = Self.identity2String(phone: phone, birth: birth)
+            let c = await Task.detached { (try? AYNCrypto.pbkdf2(id2, salt: s2))?.rawData }.value
+            if let c, AYNCrypto.constantTimeEqual(c, h2) { return true }
         }
+        registerFailure(.wrongPassword)
+        throw AppError.identityMismatch
+    }
+
+    // MARK: - Entry policy: Face ID, with the password every few minutes
+
+    /// Seconds between password prompts when Face ID is on (0 = every time).
+    var passwordEvery: Int {
+        get { defaults.object(forKey: "sec.pwEvery") as? Int ?? 300 }
+        set { defaults.set(newValue, forKey: "sec.pwEvery"); objectWillChange.send() }
+    }
+    private var lastPasswordAt: Date? {
+        let t = defaults.double(forKey: "sec.lastPassword")
+        return t > 0 ? Date(timeIntervalSince1970: t) : nil
+    }
+    private func markPassword() { defaults.set(Date().timeIntervalSince1970, forKey: "sec.lastPassword") }
+
+    /// Is the password needed on this entry?
+    var passwordDue: Bool {
+        guard canUseBiometrics, passwordEvery > 0, !needsStrongCheck, let last = lastPasswordAt else { return true }
+        return Date().timeIntervalSince(last) >= Double(passwordEvery)
+    }
+
+    /// After Face ID: opens straight away when the password isn't due.
+    func unlockWithFace() -> Bool {
+        guard let k = bioKey, !passwordDue else { return false }
+        openVault(.real, key: k)
+        return true
     }
 
     /// Forgot password, last step (option A): Face ID opens the vault key, the 2FA code proves the second factor.
@@ -700,6 +756,7 @@ final class AppState: ObservableObject {
             try? SecureEnclaveVault.enroll(masterKey: key, space: .real)
         }
         defaults.set(true, forKey: "backup.dirty")
+        markPassword()
         openVault(.real, key: key)
     }
 
@@ -937,6 +994,7 @@ final class AppState: ObservableObject {
         if biometricsWanted && Biometrics.isAvailable && SecureEnclaveVault.isAvailable {
             try? SecureEnclaveVault.enroll(masterKey: mk, space: .real)
         }
+        markPassword()
         openVault(.real, key: mk, profile: payload.profile)
         let p = payload.profile
         Task { await SupabaseClient.shared.registerAccount(email: p.email, phone: p.phone, username: p.username, birth: p.birthDate) }

@@ -46,7 +46,7 @@ struct AccountsView: View {
                 TabHeader(title: MainTab.accounts.title,
                           subtitle: tr("\(state.accounts.count) حساب محفوظ", "\(state.accounts.count) saved")) {
                     CircleIconButton(icon: "plus", size: 42, tint: Theme.bg) {
-                        editing = AccountItem(service: "", login: state.profile?.email ?? "", password: "")
+                        editing = AccountItem(service: "", login: "", password: "")
                     }
                     .background(Circle().fill(Theme.gradient))
                 }

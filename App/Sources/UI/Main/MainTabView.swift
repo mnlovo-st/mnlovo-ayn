@@ -218,6 +218,7 @@ struct SectionGate<Content: View>: View {
         if ok {
             withAnimation { mood = .happy }
         } else {
+            SoundFX.shared.playError(.passcode)
             withAnimation { mood = .angry }
             shakes += 1
             code = ""
@@ -288,6 +289,7 @@ struct SecretUnlockSheet: View {
             dismiss()
             onUnlock()
         } else {
+            SoundFX.shared.playError(.passcode)
             withAnimation { mood = .angry }
             shakes += 1
             code = ""

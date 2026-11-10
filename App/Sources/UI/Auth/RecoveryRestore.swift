@@ -28,6 +28,7 @@ struct RecoveryView: View {
     @State private var loading = false
     @State private var error: String?
     @State private var mood: EyeMood = .idle
+    @State private var needsEmailProof = false
     @FocusState private var focus: AYNFieldID?
 
     private let sb = SupabaseClient.shared
@@ -129,7 +130,7 @@ struct RecoveryView: View {
             StepHeader(icon: "envelope.badge.shield.half.filled",
                        title: tr("كود الإيميل", "Email code"),
                        subtitle: tr("أرسلنا كود إلى \(email)", "We sent a code to \(email)"))
-            CodeField(code: $emailCode, length: 8)
+            CodeField(code: $emailCode, length: 8, mail: true)
             Button { Task { await sendCode() } } label: {
                 Text(tr("إعادة الإرسال", "Resend")).font(Theme.font(14, .semibold)).foregroundStyle(Theme.accent)
             }
@@ -226,13 +227,18 @@ struct RecoveryView: View {
         switch step {
         case .identity:
             do {
-                try await state.verifyIdentity(email: email, phone: phone, birth: birth)
+                needsEmailProof = try await state.verifyIdentity(email: email, phone: phone, birth: birth)
                 FX.success()
                 go(sb.isConfigured ? .email : .factor)
             } catch { failed(error) }
         case .email:
             do {
-                _ = try await sb.verifyEmailCode(email: email.trimmingCharacters(in: .whitespaces), code: emailCode)
+                let session = try await sb.verifyEmailCode(email: email.trimmingCharacters(in: .whitespaces), code: emailCode)
+                // Email changed by support: it must be the same cloud account as this vault.
+                if needsEmailProof && session.userID != UserDefaults.standard.string(forKey: "cloud.userID") {
+                    failed(AppError.identityMismatch)
+                    return
+                }
                 FX.success()
                 go(.factor)
             } catch {
@@ -334,7 +340,7 @@ struct RestoreView: View {
                                   enabled: isValidEmail(email)) { Task { await send() } }
                 } else {
                     Text(tr("اكتب الكود اللي وصلك:", "Enter the code you received:")).font(Theme.font(15, .semibold))
-                    CodeField(code: $code, length: 8)
+                    CodeField(code: $code, length: 8, mail: true)
                     PrimaryButton(title: tr("تحقق ونزّل بياناتي", "Verify & get my data"), icon: "icloud.and.arrow.down.fill",
                                   loading: loading, enabled: code.count >= 6) { Task { await download() } }
                 }

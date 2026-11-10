@@ -245,60 +245,120 @@ struct CodeField: View {
     var tint: Color = Theme.accent
     /// Off for 2FA codes: iOS would otherwise offer SMS codes from Messages, which are never the right one.
     var autofill = true
+    /// Shows "open my mail" shortcuts (for email codes).
+    var mail = false
     @FocusState private var focused: Bool
+    @State private var clipHasCode = false
+    @State private var glow = false
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
-        ZStack {
-            TextField("", text: $code)
-                .keyboardType(.numberPad)
-                .textContentType(autofill ? .oneTimeCode : nil)
-                .focused($focused)
-                .foregroundStyle(.clear)
-                .tint(.clear)
-                .frame(width: 1, height: 1)
-                .opacity(0.02)
-                .onChange(of: code) { _, v in
-                    let clean = String(TOTP.westernDigits(v).filter { $0.isASCII && $0.isNumber }.prefix(length))
-                    if clean != v { code = clean }
-                    FX.key()
+        VStack(spacing: 14) {
+            ZStack {
+                TextField("", text: $code)
+                    .keyboardType(.numberPad)
+                    .textContentType(autofill ? .oneTimeCode : nil)
+                    .focused($focused)
+                    .foregroundStyle(.clear)
+                    .tint(.clear)
+                    .frame(width: 1, height: 1)
+                    .opacity(0.02)
+                    .onChange(of: code) { _, v in
+                        let clean = String(TOTP.westernDigits(v).filter { $0.isASCII && $0.isNumber }.prefix(length))
+                        if clean != v { code = clean }
+                        FX.key()
+                    }
+                HStack(spacing: length > 6 ? 6 : 10) {
+                    ForEach(0..<length, id: \.self) { i in
+                        let chars = Array(code)
+                        let ch = i < chars.count ? String(chars[i]) : ""
+                        let active: Bool = (i == chars.count) && focused
+                        let border: Color = active ? tint : (ch.isEmpty ? Theme.stroke : tint.opacity(0.5))
+                        Text(ch)
+                            .font(Theme.mono(length > 6 ? 22 : 26, .bold))
+                            .foregroundStyle(Theme.text)
+                            .frame(width: length > 6 ? 36 : 46, height: 58)
+                            .background(RoundedRectangle(cornerRadius: 14).fill(Theme.surface))
+                            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(border, lineWidth: active ? 2 : 1))
+                            .scaleEffect(ch.isEmpty ? 1 : 1.04)
+                            .animation(.spring(response: 0.25, dampingFraction: 0.5), value: ch)
+                    }
                 }
-            HStack(spacing: length > 6 ? 6 : 10) {
-                ForEach(0..<length, id: \.self) { i in
-                    let chars = Array(code)
-                    let ch = i < chars.count ? String(chars[i]) : ""
-                    let active: Bool = (i == chars.count) && focused
-                    let border: Color = active ? tint : (ch.isEmpty ? Theme.stroke : tint.opacity(0.5))
-                    Text(ch)
-                        .font(Theme.mono(length > 6 ? 22 : 26, .bold))
-                        .foregroundStyle(Theme.text)
-                        .frame(width: length > 6 ? 36 : 46, height: 58)
-                        .background(RoundedRectangle(cornerRadius: 14).fill(Theme.surface))
-                        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(border, lineWidth: active ? 2 : 1))
-                        .scaleEffect(ch.isEmpty ? 1 : 1.04)
-                        .animation(.spring(response: 0.25, dampingFraction: 0.5), value: ch)
+                .environment(\.layoutDirection, .leftToRight)
+                .contentShape(Rectangle())
+                .onTapGesture { focused = true }
+            }
+
+            pasteRow
+        }
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { focused = true }
+            checkClipboard()
+        }
+        .onChange(of: scenePhase) { _, p in if p == .active { checkClipboard() } }
+    }
+
+    /// A big, friendly paste button that lights up when a code is sitting on the clipboard
+    /// (detected without reading it, so iOS doesn't ask for permission).
+    private var pasteRow: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 10) {
+                PasteButton(payloadType: String.self) { items in
+                    guard let text = items.first else { return }
+                    let found = Self.extractCode(text, max: length)
+                    DispatchQueue.main.async {
+                        withAnimation(.spring) { code = found }
+                        clipHasCode = false
+                        Haptics.success()
+                    }
+                }
+                .buttonBorderShape(.capsule)
+                .labelStyle(.titleAndIcon)
+                .tint(clipHasCode ? tint : Theme.surfaceHi)
+                .controlSize(clipHasCode ? .large : .regular)
+                .shadow(color: tint.opacity(clipHasCode && glow ? 0.7 : 0), radius: 14)
+                .scaleEffect(clipHasCode && glow ? 1.04 : 1)
+
+                if mail {
+                    Menu {
+                        Button { open("message://") } label: { Label("Mail", systemImage: "envelope.fill") }
+                        Button { open("googlegmail://") } label: { Label("Gmail", systemImage: "envelope.badge.fill") }
+                        Button { open("ms-outlook://") } label: { Label("Outlook", systemImage: "envelope.open.fill") }
+                        Button { open("ymail://") } label: { Label("Yahoo Mail", systemImage: "envelope") }
+                    } label: {
+                        Label(tr("افتح البريد", "Open mail"), systemImage: "envelope.open.fill")
+                            .font(Theme.font(14, .semibold))
+                            .foregroundStyle(Theme.text)
+                            .padding(.horizontal, 14).frame(height: 36)
+                            .background(Capsule().fill(Theme.surfaceHi))
+                    }
                 }
             }
-            .environment(\.layoutDirection, .leftToRight)
-            .contentShape(Rectangle())
-            .onTapGesture { focused = true }
-        }
-        .overlay(alignment: .bottom) {
-            PasteButton(payloadType: String.self) { items in
-                guard let text = items.first else { return }
-                let found = Self.extractCode(text, max: length)
-                DispatchQueue.main.async {
-                    code = found
-                    Haptics.success()
-                }
+            if clipHasCode {
+                Label(tr("لقينا كود منسوخ — اضغط «لصق»", "A copied code is ready — tap Paste"), systemImage: "sparkles")
+                    .font(Theme.font(12, .semibold)).foregroundStyle(tint)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            } else if mail && autofill {
+                Text(tr("إذا تستخدم تطبيق «البريد» من Apple، الكود يطلع فوق الكيبورد لحاله.", "With Apple Mail, the code appears above the keyboard by itself."))
+                    .font(Theme.font(11)).foregroundStyle(Theme.faint)
+                    .multilineTextAlignment(.center)
             }
-            .buttonBorderShape(.capsule)
-            .labelStyle(.titleAndIcon)
-            .tint(Theme.accent)
-            .controlSize(.small)
-            .offset(y: 44)
         }
-        .padding(.bottom, 40)
-        .onAppear { DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { focused = true } }
+        .animation(.spring(response: 0.4), value: clipHasCode)
+        .onAppear { withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) { glow = true } }
+    }
+
+    private func open(_ s: String) {
+        if let u = URL(string: s) { openURL(u) }
+    }
+
+    private func checkClipboard() {
+        guard UIPasteboard.general.hasStrings else { clipHasCode = false; return }
+        UIPasteboard.general.detectPatterns(for: [UIPasteboard.DetectionPattern.number]) { result in
+            let has = (try? result.get())?.contains(UIPasteboard.DetectionPattern.number) ?? false
+            DispatchQueue.main.async { withAnimation { clipHasCode = has && code.count < length } }
+        }
     }
 
     /// Picks the code out of whatever was copied (e.g. "Your code: 482 913").

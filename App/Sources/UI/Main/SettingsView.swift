@@ -40,8 +40,9 @@ struct SettingsView: View {
                 }
 
                 group(tr("الأمان", "Security"), "lock.shield.fill") {
-                    toggleRow(Biometrics.icon, tr("\(Biometrics.name) + كلمة السر عند الدخول", "\(Biometrics.name) + password to enter"),
-                              sub: tr("رمز التحقق ينطلب بس بعد ٣ محاولات غلط", "The 2FA code is only asked after 3 wrong attempts"),
+                    toggleRow(Biometrics.icon, tr("الدخول بـ \(Biometrics.name)", "Enter with \(Biometrics.name)"),
+                              sub: bioOn ? tr("وجهك يفتح التطبيق، وكلمة المرور حسب المدة تحت", "Your face opens the app; the password per the interval below")
+                                         : tr("بدونه: كلمة المرور كل مرة", "Without it: password every time"),
                               $bioOn)
                         .onChange(of: bioOn) { _, v in
                             guard v != state.biometricsOn else { return }
@@ -51,6 +52,16 @@ struct SettingsView: View {
                             }
                         }
                         .disabled(state.isDecoy || !Biometrics.isAvailable)
+                    if bioOn {
+                        divider
+                        Menu {
+                            ForEach([0, 60, 300, 900, 3600, 86400], id: \.self) { s in
+                                Button(pwLabel(s)) { state.passwordEvery = s; Haptics.selection() }
+                            }
+                        } label: {
+                            rowLabel("key.fill", tr("اطلب كلمة المرور", "Ask for the password"), value: pwLabel(state.passwordEvery))
+                        }
+                    }
                     divider
                     toggleRow("faceid", tr("\(Biometrics.name) بدل رمز الأقسام", "\(Biometrics.name) instead of section passcode"), $sectionBio)
                     divider
@@ -177,6 +188,17 @@ struct SettingsView: View {
         .confirmationDialog(tr("حذف كل البيانات؟ ما ينفع التراجع.", "Erase all data? This can't be undone."),
                             isPresented: $confirmErase, titleVisibility: .visible) {
             Button(tr("حذف نهائي", "Erase permanently"), role: .destructive) { state.eraseEverything() }
+        }
+    }
+
+    private func pwLabel(_ s: Int) -> String {
+        switch s {
+        case 0: return tr("كل مرة (فوراً دائماً)", "Every time")
+        case 60: return tr("كل دقيقة", "Every minute")
+        case 300: return tr("كل ٥ دقايق", "Every 5 minutes")
+        case 900: return tr("كل ربع ساعة", "Every 15 minutes")
+        case 3600: return tr("كل ساعة", "Every hour")
+        default: return tr("مرة باليوم", "Once a day")
         }
     }
 
@@ -811,7 +833,7 @@ struct BackupView: View {
                         Task { await sendCode() }
                     }
                 } else {
-                    CodeField(code: $code, length: 8)
+                    CodeField(code: $code, length: 8, mail: true)
                     PrimaryButton(title: tr("تحقق واربط", "Verify & connect"), icon: "checkmark", loading: loading, enabled: code.count >= 6) {
                         Task { await verify() }
                     }

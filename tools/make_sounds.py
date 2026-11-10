@@ -114,6 +114,55 @@ def bloom(dur=1.2, f0=82, f1=55):
     return np.sin(phase) * np.minimum(1, t / 0.02) * np.exp(-t * 3.2)
 
 
+def marimba(freq, dur=0.9, hard=0.5):
+    """Soft felt-mallet marimba: warm fundamental, a quick 4th partial and a tiny mallet tap."""
+    t = np.arange(secs(dur)) / SR
+    s = np.sin(2 * np.pi * freq * t) * np.exp(-t * 6.5)
+    s += 0.28 * hard * np.sin(2 * np.pi * freq * 3.93 * t) * np.exp(-t * 32)
+    s += 0.10 * np.sin(2 * np.pi * freq * 9.2 * t) * np.exp(-t * 70)
+    tap = rng.normal(0, 1, len(t)) * np.exp(-t * 900) * 0.25 * hard
+    b, a = signal.butter(2, [800 / (SR / 2), 4000 / (SR / 2)], btype="band")
+    s += signal.lfilter(b, a, tap)
+    s *= np.minimum(1, t / 0.002)
+    return s / (np.max(np.abs(s)) + 1e-9)
+
+
+def knock(freq=200, dur=0.22):
+    """Wooden knock: short pitched body that drops a little, plus a filtered click."""
+    t = np.arange(secs(dur)) / SR
+    f = freq * (0.82 + 0.18 * np.exp(-t * 40))
+    body = np.sin(2 * np.pi * np.cumsum(f) / SR) * np.exp(-t * 34)
+    click = rng.normal(0, 1, len(t)) * np.exp(-t * 400)
+    b, a = signal.butter(2, [1200 / (SR / 2), 5200 / (SR / 2)], btype="band")
+    s = body + 0.35 * signal.lfilter(b, a, click)
+    s *= np.minimum(1, t / 0.0015)
+    return s / (np.max(np.abs(s)) + 1e-9)
+
+
+def thump(dur=0.35, f0=75, f1=42):
+    """Deep heartbeat thump."""
+    t = np.arange(secs(dur)) / SR
+    f = f1 + (f0 - f1) * np.exp(-t * 18)
+    s = np.sin(2 * np.pi * np.cumsum(f) / SR) * np.exp(-t * 11) * np.minimum(1, t / 0.004)
+    return s
+
+
+def growl(dur=1.0, f=55):
+    """Low, rounded growl swell (filtered saw) — tension without harshness."""
+    t = np.arange(secs(dur)) / SR
+    saw = signal.sawtooth(2 * np.pi * f * t) + 0.6 * signal.sawtooth(2 * np.pi * f * 1.5 * t + 0.4)
+    out = np.zeros_like(saw)
+    blocks = 20
+    edges = np.linspace(0, len(t), blocks + 1).astype(int)
+    for k in range(blocks):
+        cut = 180 + 700 * (k / (blocks - 1)) ** 1.5
+        b, a = signal.butter(2, cut / (SR / 2))
+        seg = signal.lfilter(b, a, saw)
+        out[edges[k]:edges[k + 1]] = seg[edges[k]:edges[k + 1]]
+    env = np.sin(np.linspace(0, np.pi, len(t))) ** 1.3
+    return out * env / (np.max(np.abs(out)) + 1e-9)
+
+
 def muted(s, cutoff=1400):
     b, a = signal.butter(2, cutoff / (SR / 2))
     return signal.lfilter(b, a, s)
@@ -228,11 +277,50 @@ def make_all():
     m.add(bell(N["A6"], 1.2, 0.8, 2.0, 3.0), 0.3, 0.1, 0.3)
     save("success", master(m, wet=0.32, tail=0.7, peak_db=-4))
 
-    # Error — gentle "hmm": the Hijaz half-step falling (Eb → D), muted and low.
-    m = Mix(0.7)
-    m.add(muted(pluck(N["Eb4"], 0.7, 0.993, 0.35), 1100), 0.0, 0.7, -0.1)
-    m.add(muted(pluck(N["D4"], 0.8, 0.993, 0.35), 1000), 0.12, 0.75, 0.1)
-    save("error", master(m, wet=0.2, tail=0.4, peak_db=-6))
+    # ---- Errors: each place has its own soft sound so nothing repeats ----
+
+    # Generic error — a warm felt "uh-uh": two marimba notes falling a fourth, rounded and quiet.
+    m = Mix(0.8)
+    m.add(muted(marimba(N["A4"], 0.7, 0.6), 2600), 0.0, 0.65, -0.12)
+    m.add(muted(marimba(N["Eb4"], 0.8, 0.5), 2200), 0.13, 0.7, 0.12)
+    save("error", master(m, wet=0.22, tail=0.45, peak_db=-7))
+
+    # Wrong passcode digit — two tiny wooden knocks (barely there, like a soft "nope" tap).
+    m = Mix(0.4)
+    m.add(knock(240, 0.2), 0.0, 0.8, -0.2)
+    m.add(knock(185, 0.22), 0.085, 0.75, 0.2)
+    save("err_soft", master(m, wet=0.12, tail=0.25, peak_db=-9))
+
+    # Wrong password — a low glassy "dum-dum": muted bell over a soft thump.
+    m = Mix(0.9)
+    m.add(muted(bell(N["D5"], 0.7, 0.5, 1.0, 7.0), 2400), 0.0, 0.5, -0.15)
+    m.add(muted(bell(N["A4"], 0.8, 0.5, 1.0, 6.0), 2000), 0.12, 0.55, 0.15)
+    m.add(thump(0.25, 110, 70), 0.0, 0.35)
+    save("err_password", master(m, wet=0.25, tail=0.5, peak_db=-7))
+
+    # Wrong code — quick double tick, like a dial that won't turn.
+    m = Mix(0.5)
+    m.add(knock(420, 0.12), 0.0, 0.6, -0.1)
+    m.add(knock(420, 0.12), 0.07, 0.5, 0.1)
+    m.add(muted(marimba(N["D4"], 0.5, 0.3), 1500), 0.05, 0.45)
+    save("err_code", master(m, wet=0.18, tail=0.3, peak_db=-8))
+
+    # The eye gets angry (3 wrong attempts) — heartbeat, a low growl swell and a cold glint.
+    m = Mix(1.7)
+    m.add(thump(0.35), 0.0, 1.0)
+    m.add(thump(0.3, 68, 40), 0.24, 0.85)
+    m.add(growl(1.1, 55), 0.18, 0.42)
+    m.add(thump(0.35), 0.82, 0.8)
+    m.add(thump(0.3, 68, 40), 1.06, 0.7)
+    m.add(muted(bell(N["Eb5"], 1.2, 2.4, 1.414, 3.0), 3000), 0.3, 0.16, 0.3)
+    save("anger", master(m, wet=0.3, long=True, tail=0.8, peak_db=-3))
+
+    # Locked out — slow falling low bells, final.
+    m = Mix(1.6)
+    for k, note in enumerate(("D4", "A3", "D3")):
+        m.add(muted(marimba(N[note], 1.2, 0.4), 1600), k * 0.26, 0.7 - k * 0.05, (k - 1) * 0.2)
+    m.add(thump(0.4, 80, 45), 0.52, 0.5)
+    save("lockout", master(m, wet=0.35, long=True, tail=0.9, peak_db=-5))
 
     # Eye opening — breath + a tiny glint.
     m = Mix(0.9)

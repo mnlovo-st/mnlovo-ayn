@@ -231,7 +231,7 @@ struct SignUpFlow: View {
                     Label(tr("تم التحقق ✓", "Verified ✓"), systemImage: "checkmark.seal.fill")
                         .font(Theme.font(18, .bold)).foregroundStyle(Theme.ok)
                 } else {
-                    CodeField(code: $emailCode, length: 8)
+                    CodeField(code: $emailCode, length: 8, mail: true)
                     Button {
                         Task { await sendEmail() }
                     } label: {

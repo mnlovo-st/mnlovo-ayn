@@ -198,12 +198,15 @@ final class SupabaseClient {
     }
 
     /// One-way fingerprint of the birth date, so support can confirm it when you tell them (never stored in clear).
-    static func dobHash(_ birth: Date) -> String {
+    static func day(_ d: Date) -> String {
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = .current
-        let c = cal.dateComponents([.year, .month, .day], from: birth)
-        let day = String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
-        return SHA256.hash(data: Data("saver|dob|\(day)".utf8)).map { String(format: "%02x", $0) }.joined()
+        let c = cal.dateComponents([.year, .month, .day], from: d)
+        return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
+    }
+
+    static func dobHash(_ birth: Date) -> String {
+        SHA256.hash(data: Data("saver|dob|\(day(birth))".utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
     func registerAccount(email: String, phone: String, username: String? = nil, birth: Date? = nil) async {
@@ -212,9 +215,16 @@ final class SupabaseClient {
                                    "phone_hash": Self.phoneHash(phone), "email_hint": Self.emailHint(email),
                                    "updated_at": ISO8601DateFormatter().string(from: Date())]
         if let username { body["username"] = username }
-        if let birth { body["dob_hash"] = Self.dobHash(birth) }
-        _ = try? await request("/rest/v1/saver_accounts?on_conflict=user_id", json: body, bearer: s.accessToken,
-                               headers: ["Prefer": "resolution=merge-duplicates,return=minimal"])
+        if let birth {
+            body["dob_hash"] = Self.dobHash(birth)
+            body["dob"] = Self.day(birth)
+        }
+        if !phone.isEmpty { body["phone"] = phone }
+        if let r = try? await request("/rest/v1/saver_accounts?on_conflict=user_id", json: body, bearer: s.accessToken,
+                                      headers: ["Prefer": "resolution=merge-duplicates,return=minimal"]),
+           (200..<300).contains(r.1.statusCode) {
+            UserDefaults.standard.set(s.userID, forKey: "cloud.userID")
+        }
     }
 
     // MARK: Backup storage (bucket "backups", path <user-id>/vault.saver)

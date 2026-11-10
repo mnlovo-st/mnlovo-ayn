@@ -4,6 +4,10 @@
 // The bot token is read from public.saver_tg_config with the service role and never leaves the server.
 import { createClient } from "npm:@supabase/supabase-js@2.49.4";
 
+declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void } | undefined;
+const later = (p: Promise<unknown>) => { try { EdgeRuntime?.waitUntil(p); } catch (_) { /* best effort */ } };
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const admin = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
   auth: { persistSession: false },
@@ -108,8 +112,16 @@ async function linkChat(cfg: Config, userId: string, chat: Record<string, any>, 
     user_id: userId, chat_id: chat.id, title: chatTitle(chat), type: chat.type ?? "private",
     tg_user_id: tgUserId, enabled: true, role,
   });
-  await tg(cfg, "sendMessage", { chat_id: chat.id, text: welcome(chat.type, role), parse_mode: "HTML",
+  const sent = await tg(cfg, "sendMessage", { chat_id: chat.id, text: welcome(chat.type, role), parse_mode: "HTML",
     reply_markup: { inline_keyboard: [[{ text: "⚙️ التحكم بالبوت", callback_data: "tg:menu" }]] } });
+  // In groups and channels the big welcome tidies itself away after 10 seconds, leaving a small note.
+  if (chat.type !== "private" && sent?.ok) {
+    later((async () => {
+      await sleep(10_000);
+      await tg(cfg, "deleteMessage", { chat_id: chat.id, message_id: sent.result.message_id });
+      await tg(cfg, "sendMessage", { chat_id: chat.id, text: "تم الربط بنجاح ✔️", disable_notification: true });
+    })());
+  }
   return "new";
 }
 
@@ -269,11 +281,20 @@ async function handleUpdate(cfg: Config, u: Record<string, any>) {
       await admin.from("saver_tg_targets").delete().eq("chat_id", cm.chat.id);
       return;
     }
-    // Added to a channel (or a group without a code): link it to whoever added the bot, if we know them.
-    if ((status === "administrator" || status === "member") && cm.chat.type !== "private" && cm.from?.id) {
-      const { data: owner } = await admin.from("saver_tg_targets").select("user_id")
-        .eq("tg_user_id", cm.from.id).eq("role", "owner").limit(1).maybeSingle();
-      if (owner) await linkChat(cfg, owner.user_id, cm.chat, cm.from.id);
+    // Added to a channel: link it to the app account that asked for it (a fresh "channel" claim),
+    // matched through the Telegram user who added the bot. Groups always link through their /start code.
+    if ((status === "administrator" || status === "member") && cm.chat.type === "channel" && cm.from?.id) {
+      const { data: owners } = await admin.from("saver_tg_targets").select("user_id, created_at")
+        .eq("tg_user_id", cm.from.id).eq("role", "owner").order("created_at", { ascending: false });
+      const ids = [...new Set((owners ?? []).map((o: any) => o.user_id))];
+      if (!ids.length) return;
+      const since = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+      const { data: claim } = await admin.from("saver_tg_links").select("code, user_id")
+        .eq("kind", "channel").in("user_id", ids).gte("created_at", since)
+        .order("created_at", { ascending: false }).limit(1).maybeSingle();
+      const userId = claim?.user_id ?? ids[0];
+      if (claim) await admin.from("saver_tg_links").delete().eq("code", claim.code);
+      await linkChat(cfg, userId, cm.chat, cm.from.id);
     }
   }
 }
@@ -312,7 +333,14 @@ Deno.serve(async (req) => {
       const code = crypto.randomUUID().replace(/-/g, "").slice(0, 24);
       await admin.from("saver_tg_links").delete().eq("user_id", user.id)
         .lt("created_at", new Date(Date.now() - 30 * 60 * 1000).toISOString());
-      await admin.from("saver_tg_links").insert({ code, user_id: user.id, kind: body.kind === "friend" ? "friend" : "self" });
+      const kind = ["friend", "channel"].includes(body.kind) ? body.kind : "self";
+      if (kind === "channel") {
+        // Channels are matched through your own Telegram account, so your bot chat must be linked first.
+        const { data: own } = await admin.from("saver_tg_targets").select("chat_id")
+          .eq("user_id", user.id).eq("role", "owner").eq("type", "private").limit(1);
+        if (!own || !own.length) return json({ error: "need_private" }, 409);
+      }
+      await admin.from("saver_tg_links").insert({ code, user_id: user.id, kind });
       return json({ bot: cfg.bot_username, code });
     }
     case "status": {

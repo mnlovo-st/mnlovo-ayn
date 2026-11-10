@@ -39,6 +39,14 @@ function hint(email: string) {
   return `${local[0]}${"•".repeat(Math.max(2, Math.min(6, local.length - 2)))}${local[local.length - 1]}${domain}`;
 }
 
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+async function authUsers(): Promise<any[]> {
+  const { data } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+  return data?.users ?? [];
+}
+
 async function details(userId: string) {
   const { data: reg } = await admin.from("saver_accounts").select("*").eq("user_id", userId).maybeSingle();
   const { data: au } = await admin.auth.admin.getUserById(userId);
@@ -49,6 +57,9 @@ async function details(userId: string) {
     user_id: userId,
     email: au?.user?.email ?? reg?.email ?? null,
     username: reg?.username ?? null,
+    phone: reg?.phone ?? null,
+    dob: reg?.dob ?? null,
+    registered: !!reg,
     created_at: au?.user?.created_at ?? reg?.created_at ?? null,
     last_sign_in_at: au?.user?.last_sign_in_at ?? null,
     has_phone: !!reg?.phone_hash,
@@ -83,12 +94,31 @@ Deno.serve(async (req) => {
       return json({ ok: true });
 
     case "search": {
-      const q = String(body.q ?? "").trim().toLowerCase().replace(/[%,()]/g, "");
-      if (q.length < 2) return json({ results: [] });
-      const { data } = await admin.from("saver_accounts").select("user_id, email, username, created_at")
-        .or(`email.ilike.%${q}%,username.ilike.%${q}%`).order("created_at", { ascending: false }).limit(20);
-      await log("search", null, q);
-      return json({ results: data ?? [] });
+      // Any mix of email / phone / username / birth date. Tolerant: typos, missing letters, a few days off.
+      const clean = (v: unknown) => String(v ?? "").trim();
+      let email = clean(body.email), username = clean(body.username);
+      const phone = clean(body.phone), dob = clean(body.dob);
+      const q = clean(body.q);
+      if (q && !email && !username) { email = q; username = q; }
+      if (!email && !username && !phone && !dob) return json({ results: [] });
+      const { data, error } = await admin.rpc("saver_admin_search", {
+        p_email: email || null, p_phone: phone || null, p_username: username || null, p_dob: dob || null,
+      });
+      if (error) return json({ error: error.message }, 400);
+      const results: any[] = (data ?? []).map((r: any) => ({ ...r, registered: true }));
+      // Accounts that signed in to the cloud but never finished registering still show up by email.
+      if (email) {
+        const e = email.toLowerCase();
+        for (const u of await authUsers()) {
+          if (!u.email || results.some((r) => r.user_id === u.id)) continue;
+          if (u.email.toLowerCase().includes(e) || e.includes(u.email.toLowerCase().split("@")[0])) {
+            results.push({ user_id: u.id, email: u.email, username: null, phone: null, dob: null, created_at: u.created_at,
+                           email_score: 0.5, username_score: 0, phone_match: false, dob_days: null, score: 1.5, registered: false });
+          }
+        }
+      }
+      await log("search", null, [email, username, phone, dob].filter(Boolean).join(" | "));
+      return json({ results });
     }
 
     case "details": {
@@ -120,6 +150,32 @@ Deno.serve(async (req) => {
       await admin.from("saver_accounts").update({ email, email_hint: hint(email), updated_at: new Date().toISOString() }).eq("user_id", uid);
       await log("change_email", uid, email);
       return json({ ok: true, ...(await details(uid)) });
+    }
+
+    case "send_reset": {
+      // Sends a fresh sign-in code to the account email, plus recovery steps on Telegram if it's linked.
+      if (!uid) return json({ error: "user_id" }, 400);
+      const info = await details(uid);
+      if (!info.email) return json({ error: "no_email" }, 400);
+      const r = await fetch(`${SUPABASE_URL}/auth/v1/otp`, {
+        method: "POST",
+        headers: { "content-type": "application/json", apikey: SERVICE, authorization: `Bearer ${SERVICE}` },
+        body: JSON.stringify({ email: info.email, create_user: false }),
+      });
+      let telegram = 0;
+      const { data: cfg } = await admin.from("saver_tg_config").select("bot_token").eq("id", 1).maybeSingle();
+      const { data: chats } = await admin.from("saver_tg_targets").select("chat_id").eq("user_id", uid).eq("role", "owner").eq("type", "private");
+      for (const c of chats ?? []) {
+        if (!cfg) break;
+        const t = await fetch(`https://api.telegram.org/bot${cfg.bot_token}/sendMessage`, {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ chat_id: c.chat_id, parse_mode: "HTML", text:
+            `🛟 <b>الدعم الفني — MNLOVO SAVER</b>\n━━━━━━━━━━━━━━\nجهّزنا حسابك للاسترجاع.\n✉️ إيميل الحساب: <code>${info.email}</code>\n\n<b>جوال جديد أو حذفت التطبيق؟</b>\n«عندي حساب، تسجيل دخول» ← بالإيميل ← حط الكود اللي وصلك ← كلمة المرور أو مفتاح الاسترجاع.\n\n<b>نسيت كلمة المرور؟</b>\nمن شاشة الدخول ← «نسيت كلمة المرور؟» واتبع الخطوات.\n\n🔒 ما نطلب منك أبداً كلمة المرور أو مفتاح الاسترجاع.` }),
+        });
+        if (t.ok) telegram++;
+      }
+      await log("send_reset", uid, `email:${r.ok} telegram:${telegram}`);
+      return json({ ok: true, email_sent: r.ok, telegram });
     }
 
     case "unlink_telegram": {

@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// Entry: Face ID ➜ password. The 2FA code is only asked after 3 wrong attempts — and the eye gets angry.
+/// Entry: Face ID opens the vault; the password is asked every few minutes (or every time without Face ID).
+/// After 3 wrong attempts the eye loses its temper and the 2FA code is required too.
 struct LoginView: View {
     @EnvironmentObject var state: AppState
 
@@ -12,149 +13,163 @@ struct LoginView: View {
     @State private var mood: EyeMood = .closed
     @State private var loading = false
     @State private var error: String?
+    @State private var note: String?
     @State private var lockedUntil: Date?
     @State private var showRecovery = false
     @State private var started = false
-    @State private var rage = false
+    @State private var rage: CGFloat = 0          // 0…1 red vignette
     @State private var shakes = 0
     @State private var useRecoveryKey = false
     @State private var recoveryKey = ""
+    @State private var appear = false
     @FocusState private var focus: AYNFieldID?
 
     var body: some View {
-        VStack(spacing: 16) {
-            HStack {
-                BrandMark(size: 30)
-                Text(Brand.appName).font(Theme.font(14, .heavy)).foregroundStyle(Theme.sub).tracking(1.5)
-                Spacer()
-                LanguageToggle()
+        ZStack {
+            rageVignette
+            VStack(spacing: 14) {
+                header
+                Spacer(minLength: 4)
+                eyeArea
+                greeting
+                FactorSteps(stage: stage, bio: state.canUseBiometrics || state.bioPassed, bioDone: state.bioPassed,
+                            needsCode: state.needsStrongCheck || stage == .code)
+                stageControls
+                    .padding(.horizontal, 22)
+                statusArea
+                Spacer(minLength: 4)
+                footerLinks
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 8)
-
-            Spacer(minLength: 6)
-
-            eyeArea
-
-            VStack(spacing: 6) {
-                Text(tr("أهلاً \(state.displayName)", "Welcome back, \(state.displayName)"))
-                    .font(Theme.font(28, .heavy))
-                    .foregroundStyle(Theme.text)
-                Text(caption)
-                    .font(Theme.font(15)).foregroundStyle(Theme.sub)
-                    .multilineTextAlignment(.center)
-                    .contentTransition(.opacity)
-            }
-            .padding(.horizontal, 24)
-
-            factors
-
-            stageControls
-            .padding(.horizontal, 24)
-
-            statusArea
-
-            Spacer()
-
-            footerLinks
+            .modifier(ShakeEffect(shakes: CGFloat(shakes)))
+            .opacity(appear ? 1 : 0)
+            .offset(y: appear ? 0 : 14)
         }
         .animation(.spring(response: 0.45, dampingFraction: 0.85), value: stage)
         .onChange(of: focus) { _, f in
-            guard stage == .password, !loading else { return }
-            withAnimation { mood = (f == .password) ? .lookUp : .idle }
+            guard stage == .password, !loading, rage == 0 else { return }
+            withAnimation { mood = (f == .password) ? .lookUp : (state.needsStrongCheck ? .glare : .idle) }
         }
         .onAppear(perform: start)
         .sheet(isPresented: $showRecovery) { RecoveryView().environmentObject(state) }
     }
 
+    // MARK: Pieces
+
+    private var header: some View {
+        HStack(spacing: 8) {
+            BrandMark(size: 28)
+            Text(Brand.appName).font(Theme.font(13, .heavy)).foregroundStyle(Theme.sub).tracking(1.5)
+            Spacer()
+            LanguageToggle()
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 8)
+    }
+
     private var eyeArea: some View {
         ZStack {
-            if rage {
-                Circle().fill(RadialGradient(colors: [Theme.danger.opacity(0.55), .clear], center: .center, startRadius: 10, endRadius: 150))
-                    .frame(width: 300, height: 300)
-                    .transition(.scale.combined(with: .opacity))
-            }
-            EyeView(mood: mood, size: 168, sounds: true)
-                .modifier(ShakeEffect(shakes: CGFloat(shakes)))
+            LensRings(tint: rage > 0 ? Theme.danger : Theme.accent, spinning: stage == .face || loading)
+                .frame(width: 250, height: 250)
+            EyeView(mood: mood, size: 160, sounds: true)
                 .onTapGesture { if stage == .face { Task { await faceID() } } }
         }
-        .frame(height: 180)
+        .frame(height: 230)
     }
 
-    private var statusArea: some View {
-        VStack(spacing: 12) {
-            if let error {
-                Label(error, systemImage: "exclamationmark.triangle.fill")
-                    .font(Theme.font(14, .semibold))
-                    .foregroundStyle(Theme.danger)
-                    .padding(.horizontal, 24)
-                    .multilineTextAlignment(.center)
-                    .transition(.opacity)
-            }
+    private var greeting: some View {
+        VStack(spacing: 6) {
+            Text(timeGreeting + (state.displayName.isEmpty ? "" : tr("، ", ", ") + state.displayName))
+                .font(Theme.font(27, .heavy))
+                .foregroundStyle(Theme.text)
+                .multilineTextAlignment(.center)
+            Text(caption)
+                .font(Theme.font(15)).foregroundStyle(rage > 0 ? Theme.danger : Theme.sub)
+                .multilineTextAlignment(.center)
+                .id(caption)
+                .transition(.opacity)
+        }
+        .padding(.horizontal, 24)
+        .animation(.easeInOut(duration: 0.3), value: caption)
+    }
 
-            if let until = lockedUntil {
-                TimelineView(.periodic(from: .now, by: 1)) { ctx in
-                    let left = max(0, Int(until.timeIntervalSince(ctx.date)))
-                    Text(tr("مقفل مؤقتاً: \(left) ث", "Locked: \(left)s"))
-                        .font(Theme.mono(15, .bold)).foregroundStyle(Theme.warn)
-                        .onChange(of: left) { _, v in if v == 0 { lockedUntil = nil; error = nil } }
-                }
-            }
-
-            if lockedUntil != nil || state.failCount >= 3 {
-                SupportButton(prominent: true).padding(.horizontal, 24)
-            }
+    private var timeGreeting: String {
+        let h = Calendar.current.component(.hour, from: Date())
+        switch h {
+        case 5..<12: return tr("صباح الخير", "Good morning")
+        case 12..<18: return tr("هلا والله", "Hey there")
+        default: return tr("مساء الخير", "Good evening")
         }
     }
 
-    private var footerLinks: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 16) {
-                Button { showRecovery = true } label: {
-                    Text(tr("نسيت كلمة المرور؟", "Forgot password?"))
-                        .font(Theme.font(15, .semibold))
-                        .foregroundStyle(Theme.accent)
-                }
-                Text("·").foregroundStyle(Theme.faint)
-                SupportButton()
+    private var caption: String {
+        if rage > 0 && stage != .code { return tr("😠 ٣ محاولات غلط… العين ما صارت تثق فيك", "😠 3 wrong tries… the eye doesn't trust you anymore") }
+        switch stage {
+        case .face: return tr("بس وجهك، وتدخل.", "Just your face, and you're in.")
+        case .password:
+            if let note { return note }
+            if state.needsStrongCheck {
+                return tr("👁️ العين شاكّة فيك… بعد كلمة المرور بنطلب رمز التحقق.", "👁️ The eye is suspicious… after the password we'll ask for the 2FA code.")
             }
-            Text(Brand.copyright).font(Theme.font(11, .medium)).foregroundStyle(Theme.faint).padding(.bottom, 10)
+            return state.bioPassed ? tr("تم التحقق من وجهك ✓ بقيت كلمة المرور.", "Face verified ✓ Now your password.")
+                                   : tr("اكتب كلمة المرور.", "Enter your password.")
+        case .code:
+            return useRecoveryKey
+                ? tr("اكتب مفتاح الاسترجاع اللي حفظته وقت إنشاء الحساب.", "Enter the recovery key you saved when creating the account.")
+                : tr("أثبت إنك أنت: الرمز من «كلمات السر» تحت MNLOVO SAVER.", "Prove it's you: the code from Passwords under MNLOVO SAVER.")
         }
     }
 
     private var stageControls: some View {
         Group {
             switch stage {
-            case .face:
-                VStack(spacing: 12) {
-                    PrimaryButton(title: tr("افتح بـ \(Biometrics.name)", "Unlock with \(Biometrics.name)"), icon: Biometrics.icon,
-                                  loading: loading) { Task { await faceID() } }
-                    Button {
-                        state.resetBiometricStep()
-                        withAnimation(.spring) { stage = .password; mood = .idle }
-                    } label: {
-                        Text(tr("استخدم كلمة السر", "Use your password instead"))
-                            .font(Theme.font(14, .semibold)).foregroundStyle(Theme.sub)
-                    }
-                }
-                .transition(.opacity.combined(with: .scale(scale: 0.96)))
-            case .password:
-                VStack(spacing: 14) {
-                    AYNField(title: tr("كلمة السر", "Password"), icon: "key.fill", text: $password, secure: true,
-                             contentType: .password, focus: $focus, id: .password) { Task { await submitPassword() } }
-                    PrimaryButton(title: tr("دخول", "Unlock"), icon: "lock.open.fill", loading: loading,
-                                  enabled: !password.isEmpty && lockedUntil == nil) { Task { await submitPassword() } }
-                }
-                .transition(.move(edge: .trailing).combined(with: .opacity))
-            case .code:
-                codeStage
+            case .face: faceStage
+            case .password: passwordStage
+            case .code: codeStage
             }
         }
     }
 
-    private var codeStage: some View {
+    private var faceStage: some View {
         VStack(spacing: 14) {
-            Label(tr("تحقق إضافي: \(state.failCount) محاولات غلط", "Extra check: \(state.failCount) wrong attempts"),
+            Button { Task { await faceID() } } label: {
+                ZStack {
+                    Circle().fill(Theme.accent.opacity(0.12)).frame(width: 92, height: 92)
+                    Circle().strokeBorder(Theme.gradient, lineWidth: 1.5).frame(width: 92, height: 92)
+                    FaceFrame(active: loading).frame(width: 46, height: 46)
+                    Image(systemName: Biometrics.icon).font(.system(size: 30, weight: .medium)).foregroundStyle(Theme.accent)
+                }
+                .shadow(color: Theme.accent.opacity(0.4), radius: 18)
+            }
+            .buttonStyle(PressScale())
+            Text(tr("افتح بـ \(Biometrics.name)", "Unlock with \(Biometrics.name)"))
+                .font(Theme.font(15, .bold)).foregroundStyle(Theme.text)
+            Button {
+                state.resetBiometricStep()
+                withAnimation(.spring) { stage = .password; mood = .idle }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { focus = .password }
+            } label: {
+                Text(tr("استخدم كلمة المرور", "Use your password"))
+                    .font(Theme.font(14, .semibold)).foregroundStyle(Theme.sub)
+            }
+        }
+        .transition(.opacity.combined(with: .scale(scale: 0.94)))
+    }
+
+    private var passwordStage: some View {
+        VStack(spacing: 12) {
+            AYNField(title: tr("كلمة المرور", "Password"), icon: "key.fill", text: $password, secure: true,
+                     contentType: .password, focus: $focus, id: .password) { Task { await submitPassword() } }
+            PrimaryButton(title: tr("دخول", "Unlock"), icon: "lock.open.fill", loading: loading,
+                          enabled: !password.isEmpty && lockedUntil == nil) { Task { await submitPassword() } }
+        }
+        .padding(14)
+        .glass(0, radius: 26)
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+    }
+
+    private var codeStage: some View {
+        VStack(spacing: 12) {
+            Label(tr("تحقق إضافي بعد \(state.failCount) محاولات غلط", "Extra check after \(state.failCount) wrong attempts"),
                   systemImage: "exclamationmark.shield.fill")
                 .font(Theme.font(13, .bold)).foregroundStyle(Theme.danger)
                 .padding(.horizontal, 12).frame(height: 30)
@@ -168,7 +183,6 @@ struct LoginView: View {
             } else {
                 CodeField(code: $code, tint: Theme.danger, autofill: false)
                     .onChange(of: code) { _, v in if v.count == 6 { submitCode() } }
-                PrimaryButton(title: tr("تحقق", "Verify"), icon: "checkmark.shield.fill", enabled: code.count == 6) { submitCode() }
             }
             HStack(spacing: 18) {
                 Button {
@@ -179,61 +193,74 @@ struct LoginView: View {
                 }
                 Button {
                     state.cancelPending()
-                    withAnimation(.spring) { stage = .password; code = ""; mood = .suspicious(0.6); rage = false }
+                    withAnimation(.spring) { stage = .password; code = ""; mood = .glare; rage = 0 }
                 } label: {
                     Text(tr("رجوع", "Back")).font(Theme.font(14, .semibold)).foregroundStyle(Theme.sub)
                 }
             }
         }
-        .transition(.asymmetric(insertion: .scale(scale: 0.8).combined(with: .opacity), removal: .opacity))
+        .padding(14)
+        .glass(0, radius: 26, tint: Theme.danger)
+        .transition(.asymmetric(insertion: .move(edge: .bottom).combined(with: .opacity), removal: .opacity))
     }
 
-    private var caption: String {
-        switch stage {
-        case .face: return tr("أول شي وجهك، وبعدها كلمة السر.", "First your face, then your password.")
-        case .password:
-            if state.needsStrongCheck {
-                return tr("👁️ العين شاكّة فيك… بعد كلمة السر بنطلب رمز التحقق.", "👁️ The eye is suspicious… after the password we'll ask for the 2FA code.")
+    private var statusArea: some View {
+        VStack(spacing: 10) {
+            if let error {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .font(Theme.font(14, .semibold))
+                    .foregroundStyle(Theme.danger)
+                    .padding(.horizontal, 24)
+                    .multilineTextAlignment(.center)
+                    .transition(.opacity)
             }
-            return state.bioPassed
-                ? tr("تم التحقق من وجهك ✓ بقيت كلمة السر.", "Face verified ✓ Now your password.")
-                : tr("اكتب كلمة السر.", "Enter your password.")
-        case .code:
-            return useRecoveryKey
-                ? tr("اكتب مفتاح الاسترجاع اللي حفظته وقت إنشاء الحساب.", "Enter the recovery key you saved when creating the account.")
-                : tr("أثبت إنك أنت: اكتب الرمز من «كلمات السر» تحت MNLOVO SAVER.", "Prove it's you: enter the code from Passwords under MNLOVO SAVER.")
-        }
-    }
-
-    /// Small chips showing which factors are done.
-    private var factors: some View {
-        HStack(spacing: 8) {
-            if state.canUseBiometrics || state.bioPassed {
-                chip(Biometrics.icon, Biometrics.name, done: state.bioPassed, active: stage == .face)
+            if let until = lockedUntil {
+                TimelineView(.periodic(from: .now, by: 1)) { ctx in
+                    let left = max(0, Int(until.timeIntervalSince(ctx.date)))
+                    Label(tr("مقفل مؤقتاً: \(left) ث", "Locked: \(left)s"), systemImage: "hourglass")
+                        .font(Theme.mono(15, .bold)).foregroundStyle(Theme.warn)
+                        .onChange(of: left) { _, v in if v == 0 { lockedUntil = nil; error = nil } }
+                }
             }
-            chip("key.fill", tr("كلمة السر", "Password"), done: stage == .code, active: stage == .password)
-            if state.needsStrongCheck || stage == .code {
-                chip("lock.rotation", tr("رمز التحقق", "2FA code"), done: false, active: stage == .code)
-                    .transition(.scale.combined(with: .opacity))
+            if lockedUntil != nil || state.failCount >= 3 {
+                SupportButton(prominent: true).padding(.horizontal, 24)
             }
         }
     }
 
-    private func chip(_ icon: String, _ title: String, done: Bool, active: Bool) -> some View {
-        HStack(spacing: 5) {
-            Image(systemName: done ? "checkmark.circle.fill" : icon)
-            Text(title)
+    private var footerLinks: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 14) {
+                Button { showRecovery = true } label: {
+                    Text(tr("نسيت كلمة المرور؟", "Forgot password?"))
+                        .font(Theme.font(14, .semibold)).foregroundStyle(Theme.accent)
+                }
+                Capsule().fill(Theme.stroke).frame(width: 1, height: 14)
+                SupportButton()
+            }
+            .padding(.horizontal, 16).frame(height: 38)
+            .background(Capsule().fill(Theme.surface))
+            Text(Brand.copyright).font(Theme.font(11, .medium)).foregroundStyle(Theme.faint).padding(.bottom, 8)
         }
-        .font(Theme.font(12, .bold))
-        .foregroundStyle(done ? Theme.ok : (active ? Theme.text : Theme.faint))
-        .padding(.horizontal, 10).frame(height: 28)
-        .background(Capsule().fill(done ? Theme.ok.opacity(0.14) : (active ? Theme.surfaceHi : Theme.surface)))
-        .overlay(Capsule().strokeBorder(active ? Theme.accent.opacity(0.5) : .clear))
-        .animation(.spring(response: 0.35), value: done)
     }
+
+    /// Red edges that pulse while the eye is furious.
+    private var rageVignette: some View {
+        TimelineView(.animation(minimumInterval: 1 / 30, paused: rage == 0)) { ctx in
+            let t = ctx.date.timeIntervalSinceReferenceDate
+            let beat = 0.65 + 0.35 * max(0, sin(t * 7.5))
+            RadialGradient(colors: [.clear, Theme.danger.opacity(0.55 * Double(rage) * beat)],
+                           center: .center, startRadius: 160, endRadius: 560)
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+        }
+    }
+
+    // MARK: Flow
 
     private func start() {
         lockedUntil = state.lockedUntil
+        withAnimation(.spring(response: 0.7).delay(0.1)) { appear = true }
         guard !started else { return }
         started = true
         if state.canUseBiometrics && !state.bioPassed {
@@ -246,7 +273,7 @@ struct LoginView: View {
             }
         } else {
             stage = .password
-            withAnimation(.easeInOut(duration: 0.8).delay(0.3)) { mood = state.needsStrongCheck ? .suspicious(0.6) : .idle }
+            withAnimation(.easeInOut(duration: 0.8).delay(0.3)) { mood = state.needsStrongCheck ? .glare : .idle }
         }
     }
 
@@ -257,9 +284,17 @@ struct LoginView: View {
         let ok = await state.biometricStep()
         loading = false
         if ok {
+            if state.unlockWithFace() {
+                withAnimation { mood = .happy }
+                return
+            }
             withAnimation { mood = .happy }
-            await pause(0.55)
-            withAnimation(.spring) { stage = .password; mood = .idle }
+            await pause(0.5)
+            note = state.needsStrongCheck ? nil
+                : (state.passwordEvery == 0
+                    ? tr("تم التحقق من وجهك ✓ وإعداداتك تطلب كلمة المرور كل مرة.", "Face verified ✓ Your settings ask for the password every time.")
+                    : tr("تم التحقق من وجهك ✓ مرّ وقت من آخر مرة، اكتب كلمة المرور.", "Face verified ✓ It's been a while — enter your password."))
+            withAnimation(.spring) { stage = .password; mood = state.needsStrongCheck ? .glare : .idle }
             await pause(0.15)
             focus = .password
         } else {
@@ -284,53 +319,61 @@ struct LoginView: View {
             password = ""
             await enrage()
         case .wrong:
+            FX.error(.password)
             withAnimation { mood = .angry }
             withAnimation(.default) { shakes += 1 }
             let left = max(0, 3 - state.failCount)
             error = left > 0
-                ? tr("كلمة السر غلط. باقي \(left) قبل التحقق الإضافي.", "Wrong password. \(left) left before the extra check.")
-                : tr("كلمة السر غلط. من الحين بنطلب رمز التحقق كمان.", "Wrong password. From now on we'll also ask for the 2FA code.")
+                ? tr("كلمة المرور غلط. باقي \(left) قبل التحقق الإضافي.", "Wrong password. \(left) left before the extra check.")
+                : tr("كلمة المرور غلط. من الحين بنطلب رمز التحقق كمان.", "Wrong password. From now on we'll also ask for the 2FA code.")
             password = ""
             await pause(1.1)
-            withAnimation { mood = state.needsStrongCheck ? .suspicious(0.6) : .idle }
+            withAnimation { mood = state.needsStrongCheck ? .glare : .idle }
         case .lockedOut(let until):
-            withAnimation { mood = .angry }
+            FX.error(.lockout)
+            withAnimation { mood = .dizzy }
             lockedUntil = until
             error = tr("محاولات كثيرة. انتظر شوي.", "Too many attempts. Please wait.")
             password = ""
         }
     }
 
-    /// The eye gets angry and holds a grudge: red glow, shaking, then the 2FA code slides in.
+    /// The eye loses its temper: a startled pop, then fury with a heartbeat and red edges,
+    /// and finally a cold glare while the 2FA code slides in.
     private func enrage() async {
-        Haptics.error()
-        SoundFX.shared.play(.error, volume: 0.6)
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.5)) { mood = .angry; rage = true }
-        for _ in 0..<3 {
-            withAnimation(.default) { shakes += 1 }
+        withAnimation(.spring(response: 0.25, dampingFraction: 0.5)) { mood = .surprised }
+        Haptics.tap(.rigid)
+        await pause(0.32)
+        SoundFX.shared.playError(.anger)
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.6)) { mood = .furious; rage = 1; error = nil }
+        // heartbeat haptics in time with the sound (thump-thump … thump-thump)
+        for d in [0.0, 0.24, 0.58, 0.24] {
+            await pause(d)
             Haptics.tap(.heavy)
-            await pause(0.18)
+            if d == 0 || d == 0.58 { withAnimation(.default) { shakes += 1 } }
         }
-        await pause(0.35)
-        withAnimation(.easeInOut(duration: 0.5)) { mood = .suspicious(0.6) }
-        error = nil
-        await pause(0.25)
-        withAnimation(.spring(response: 0.5, dampingFraction: 0.75)) { stage = .code }
+        await pause(0.7)
+        withAnimation(.easeInOut(duration: 0.6)) { mood = .glare; rage = 0.45 }
+        await pause(0.3)
+        withAnimation(.spring(response: 0.5, dampingFraction: 0.78)) { stage = .code }
+        await pause(1.2)
+        withAnimation(.easeOut(duration: 1.2)) { rage = 0.25 }
     }
 
     private func submitCode() {
         guard code.count == 6 else { return }
         if state.verify2FA(code) {
-            withAnimation { mood = .happy; rage = false }
+            withAnimation { mood = .happy; rage = 0 }
         } else {
-            withAnimation { mood = .angry }
+            FX.error(.code)
+            withAnimation { mood = .furious }
             withAnimation(.default) { shakes += 1 }
             error = (state.lastCodeProblem ?? .wrongCode).localizedDescription
             code = ""
             if let until = state.lockedUntil { lockedUntil = until }
             Task {
                 await pause(1.0)
-                withAnimation { mood = .suspicious(0.6) }
+                withAnimation { mood = .glare }
             }
         }
     }
@@ -341,13 +384,111 @@ struct LoginView: View {
         defer { loading = false }
         withAnimation { mood = .thinking }
         if await state.verifyPendingRecovery(recoveryKey) {
-            withAnimation { mood = .happy; rage = false }
+            withAnimation { mood = .happy; rage = 0 }
         } else {
-            withAnimation { mood = .angry }
+            FX.error(.code)
+            withAnimation { mood = .furious }
             withAnimation(.default) { shakes += 1 }
             error = AppError.wrongRecovery.localizedDescription
             recoveryKey = ""
             if let until = state.lockedUntil { lockedUntil = until }
         }
+    }
+}
+
+// MARK: - Login decorations
+
+/// Slowly turning rings around the eye, like a camera lens.
+struct LensRings: View {
+    var tint: Color
+    var spinning: Bool
+    @State private var turn = false
+
+    var body: some View {
+        ZStack {
+            Circle().strokeBorder(tint.opacity(0.10), lineWidth: 1)
+            Circle()
+                .trim(from: 0, to: 0.72)
+                .stroke(AngularGradient(colors: [tint.opacity(0), tint.opacity(0.7), Theme.accent2.opacity(0.6), tint.opacity(0)], center: .center),
+                        style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                .padding(10)
+                .rotationEffect(.degrees(turn ? 360 : 0))
+            Circle()
+                .stroke(tint.opacity(0.18), style: StrokeStyle(lineWidth: 1, dash: [2, 7]))
+                .padding(26)
+                .rotationEffect(.degrees(turn ? -360 : 0))
+        }
+        .animation(.linear(duration: spinning ? 3 : 14).repeatForever(autoreverses: false), value: turn)
+        .onAppear { turn = true }
+        .allowsHitTesting(false)
+    }
+}
+
+/// Face ID-style corner brackets that pulse while scanning.
+struct FaceFrame: View {
+    var active: Bool
+    @State private var pulse = false
+    var body: some View {
+        GeometryReader { g in
+            let s = g.size.width, l = s * 0.28
+            Path { p in
+                let corners: [(CGFloat, CGFloat, CGFloat, CGFloat)] = [(0, 0, 1, 1), (1, 0, -1, 1), (0, 1, 1, -1), (1, 1, -1, -1)]
+                for c in corners {
+                    let cx = c.0 * s, cy = c.1 * s
+                    p.move(to: CGPoint(x: cx, y: cy + c.3 * l))
+                    p.addLine(to: CGPoint(x: cx, y: cy))
+                    p.addLine(to: CGPoint(x: cx + c.2 * l, y: cy))
+                }
+            }
+            .stroke(Theme.accent.opacity(0.5), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+        }
+        .scaleEffect(pulse ? 1.5 : 1.35)
+        .opacity(active ? 1 : 0.6)
+        .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: pulse)
+        .onAppear { pulse = true }
+    }
+}
+
+/// Small stepper showing which factors are needed and done.
+struct FactorSteps: View {
+    var stage: LoginView.Stage
+    var bio: Bool
+    var bioDone: Bool
+    var needsCode: Bool
+
+    var body: some View {
+        HStack(spacing: 6) {
+            if bio {
+                step(Biometrics.icon, Biometrics.name, done: bioDone, active: stage == .face)
+                connector(done: bioDone)
+            }
+            step("key.fill", tr("كلمة المرور", "Password"), done: stage == .code, active: stage == .password)
+            if needsCode {
+                connector(done: stage == .code)
+                step("lock.rotation", tr("رمز التحقق", "2FA code"), done: false, active: stage == .code, danger: true)
+                    .transition(.scale.combined(with: .opacity))
+            }
+        }
+        .animation(.spring(response: 0.4), value: needsCode)
+        .animation(.spring(response: 0.4), value: stage)
+    }
+
+    private func connector(done: Bool) -> some View {
+        Capsule().fill(done ? Theme.ok : Theme.stroke).frame(width: 16, height: 2)
+    }
+
+    private func step(_ icon: String, _ title: String, done: Bool, active: Bool, danger: Bool = false) -> some View {
+        let color: Color = done ? Theme.ok : (active ? (danger ? Theme.danger : Theme.text) : Theme.faint)
+        let fill: Color = done ? Theme.ok.opacity(0.14) : (active ? (danger ? Theme.danger.opacity(0.14) : Theme.surfaceHi) : Theme.surface)
+        let border: Color = active ? (danger ? Theme.danger.opacity(0.6) : Theme.accent.opacity(0.5)) : .clear
+        return HStack(spacing: 5) {
+            Image(systemName: done ? "checkmark.circle.fill" : icon)
+            Text(title)
+        }
+        .font(Theme.font(12, .bold))
+        .foregroundStyle(color)
+        .padding(.horizontal, 10).frame(height: 28)
+        .background(Capsule().fill(fill))
+        .overlay(Capsule().strokeBorder(border))
     }
 }

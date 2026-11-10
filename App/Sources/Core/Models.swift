@@ -192,6 +192,9 @@ struct VaultMeta: Codable {
     var identitySalt: Data?
     var identityHash: Data?
     var inboxPublicKey: Data
+    /// Phone + birth date only (no email), so support can change the email and recovery still works.
+    var identity2Salt: Data?
+    var identity2Hash: Data?
 }
 
 /// Section lock type: 6-digit passcode (default), 4-digit passcode, or free text.
