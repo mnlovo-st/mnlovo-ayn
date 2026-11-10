@@ -206,9 +206,12 @@ final class TelegramService {
     }
 
     /// Sends to every enabled linked chat; returns how many received it.
+    /// `copy` adds a button under the message that copies exactly that text when tapped.
     @discardableResult
-    func send(_ html: String) async throws -> Int {
-        let r = try await call("send", ["text": html])
+    func send(_ html: String, copy: String? = nil) async throws -> Int {
+        var payload: [String: Any] = ["text": html]
+        if let copy, !copy.isEmpty { payload["copy"] = copy }
+        let r = try await call("send", payload)
         return (r["sent"] as? NSNumber)?.intValue ?? 0
     }
 
@@ -221,12 +224,16 @@ final class TelegramService {
             let blob = cipher.encode(plainAccount(a), key: key)
             let header = tr("🔐 <b>حساب مشفّر</b>", "🔐 <b>Encrypted account</b>")
             let how = cipher == .aes
-                ? tr("🔑 ينفك بكلمة المرور من «أداة التشفير» في التطبيق.", "🔑 Decode with the password in the app's Cipher tool.")
-                : tr("🔓 الصقه في «أداة التشفير» بالتطبيق عشان يطلع واضح.", "🔓 Paste it into the app's Cipher tool to reveal it.")
-            // Plain text, not <code>: the mono face wraps badly on a phone, and long-press copies either way.
-            let msg = "\(header)\n\n\(Self.esc(blob))\n\n<i>\(how)</i>"
+                ? tr("اضغط الزر تحت وينسخ الشفرة بنفسه، وبعدين الصقها في «أداة التشفير» بالتطبيق مع كلمة المرور 🔑",
+                     "Tap the button below to copy the cipher, then paste it into the app's Cipher tool with the password 🔑")
+                : tr("اضغط الزر تحت وينسخ الشفرة بنفسه، وبعدين الصقها في «أداة التشفير» بالتطبيق 🔓",
+                     "Tap the button below to copy the cipher, then paste it into the app's Cipher tool 🔓")
+            // The cipher text is blurred like everything else, so it can't sit in a <code> block
+            // (Telegram won't blur those). The copy button under the message hands over exactly
+            // the text the app's decoder expects — no stray header, no missing character.
+            let msg = "\(header)\n\n<tg-spoiler>\(Self.esc(blob))</tg-spoiler>\n\n<i>\(how)</i>"
                 + footer(tr("#حسابات", "#accounts"))
-            return try await send(msg)   // already unreadable; no spoiler needed
+            return try await send(msg, copy: blob)
         }
         return try await send(wrap(body))
     }
@@ -291,6 +298,7 @@ final class TelegramService {
             do {
                 let n = try await send(text)
                 if n == 0 { try? await refresh() }
+                else { NotificationCenter.default.post(name: .aynTelegramSent, object: nil) }
                 UserDefaults.standard.removeObject(forKey: "tg.lastError")
             } catch {
                 UserDefaults.standard.set(error.localizedDescription, forKey: "tg.lastError")

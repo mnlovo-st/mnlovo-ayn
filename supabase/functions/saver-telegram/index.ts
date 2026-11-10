@@ -142,6 +142,14 @@ const SUPPORT_ROW = [
   { text: "📸 إنستغرام", url: "https://instagram.com/4saf" },
 ];
 
+/** The button under a ciphered message. Telegram copies up to 256 characters straight from a button;
+ *  anything longer goes through a callback that hands over a tap-to-copy message for a minute. */
+function copyButton(text: string) {
+  return text.length <= 256
+    ? { text: "📋 انسخ الشفرة", copy_text: { text } }
+    : { text: "📋 انسخ الشفرة", callback_data: "tg:copy" };
+}
+
 type Target = { user_id: string; chat_id: number; type: string; enabled: boolean; role: string; tg_user_id: number | null; title: string };
 
 async function targetsOf(chatId: number): Promise<Target[]> {
@@ -364,6 +372,23 @@ ${row.enabled ? (row.bundle ? "الخاصية شغّالة والأمانة مح
         reply_markup: { inline_keyboard: [[{ text: "↩️ رجوع للتحكم", callback_data: "tg:menu" }]] } });
       return;
     }
+    case "tg:copy": {
+      // The cipher is the blurred part of the message: read it back by its spoiler entity.
+      const ent = (q.message?.entities ?? []).find((e: any) => e.type === "spoiler");
+      const blob = ent ? String(q.message.text ?? "").slice(ent.offset, ent.offset + ent.length) : "";
+      if (!blob) return await answer("ما لقيت الشفرة في هالرسالة.", true);
+      await answer("اضغط على النص اللي وصلك وينسخ بنفسه");
+      const sent = await tg(cfg, "sendMessage", { chat_id: chatId, parse_mode: "HTML",
+        text: `<code>${esc(blob)}</code>\n\n<i>اضغط عليه وينسخ · ينمسح بعد دقيقة</i>`,
+        reply_to_message_id: msgId });
+      if (sent?.ok) {
+        later((async () => {
+          await sleep(60_000);
+          await tg(cfg, "deleteMessage", { chat_id: chatId, message_id: sent.result.message_id });
+        })());
+      }
+      return;
+    }
     case "tg:unlink": {
       await answer();
       await tg(cfg, "editMessageText", { chat_id: chatId, message_id: msgId, parse_mode: "HTML",
@@ -421,7 +446,7 @@ async function handleUpdate(cfg: Config, u: Record<string, any>) {
       await tg(cfg, "sendMessage", { chat_id: m.chat.id, parse_mode: "HTML",
         text: `🤝 <b>صرت أمينه بعد وفاته</b>
 
-${whoName} اختارك الشخص اللي يستلم بياناته ووصيته إذا توفّى، لا الله لا يبلانا.
+${whoName} اختارك الشخص اللي يستلم بياناته ووصيته إذا توفّى، لا سمح الله.
 
 <b>كيف تمشي؟</b>
 • التطبيق يراقب آخر مرة فتحه.
@@ -606,11 +631,13 @@ Deno.serve(async (req) => {
     case "send": {
       const text = String(body.text ?? "").slice(0, 4000);
       if (!text) return json({ error: "empty" }, 400);
+      const copy = typeof body.copy === "string" ? body.copy : "";
       const { data: targets } = await admin.from("saver_tg_targets").select("chat_id")
         .eq("user_id", user.id).eq("enabled", true);
       let sent = 0;
       for (const t of targets ?? []) {
-        const msg = { text, parse_mode: "HTML", link_preview_options: { is_disabled: true } };
+        const msg: Record<string, unknown> = { text, parse_mode: "HTML", link_preview_options: { is_disabled: true } };
+        if (copy) msg.reply_markup = { inline_keyboard: [[copyButton(copy)]] };
         let r = await tg(cfg, "sendMessage", { chat_id: t.chat_id, ...msg });
         const moved = r?.parameters?.migrate_to_chat_id;
         if (!r?.ok && moved) { // group was upgraded to a supergroup

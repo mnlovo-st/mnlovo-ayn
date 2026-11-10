@@ -26,6 +26,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
 
 extension Notification.Name {
     static let aynRemindersChanged = Notification.Name("saver.reminders.changed")
+    static let aynTelegramSent = Notification.Name("saver.telegram.sent")
 }
 
 @main
@@ -104,6 +105,9 @@ struct RootView: View {
             let captured = UIScreen.main.isCaptured
             if captured && !state.screenCaptured && state.isUnlocked { state.logScreenEvent(.recording) }
             state.screenCaptured = captured
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .aynTelegramSent)) { _ in
+            state.show(tr("تم الإرسال ✓", "Sent ✓"), icon: "paperplane.fill")
         }
         .onReceive(NotificationCenter.default.publisher(for: .aynRemindersChanged)) { _ in
             if state.isUnlocked { state.reminders = RemindersStore.load(state.space) }

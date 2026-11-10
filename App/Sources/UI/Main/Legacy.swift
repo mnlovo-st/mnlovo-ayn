@@ -2,294 +2,311 @@ import SwiftUI
 
 // MARK: - Animated explainer (used in Settings and during sign-up)
 
-/// One idea, carried the whole way through: the line of your own pulse.
+/// The story told on real screens, the way the Telegram and reminders walkthroughs tell theirs:
+/// your phone with the app open → the same phone left untouched while the days count up → the
+/// bot's daily "are you okay?" piling up in your chat → one tap that resets everything → and, if
+/// that tap never comes, your trustee's phone receiving the will and the data, message by message.
 ///
-/// It beats while you're here. It goes flat when you stop opening the app. The bot knocks on that
-/// flat line, three times, and hears nothing. One answer from you and the beating comes back. No
-/// answer at all, and the flat line folds itself into the letter your trustee receives.
-///
-/// The earlier version put a candle beside a mock phone, which was two pictures competing for the
-/// same sentence. This is a single object that changes meaning as the story moves.
+/// Earlier versions tried a candle, then an abstract pulse line. Both asked the viewer to decode a
+/// metaphor. This one simply shows what will actually happen, on the screens where it happens.
 struct LegacyExplainer: View {
     @State private var scene = 0
     @State private var step = 0
-    @State private var beatPulse = false
-    private let sceneCount = 5
-
-    private let alive = Color(hex: 0x35D2B4)
-    private let gone = Color(hex: 0x7A8696)
-    private let warm = Color(hex: 0xFFB45C)
+    @State private var auto = true
+    private let blue = TelegramService.blue
+    private let rose = Color(hex: 0xFF5FA2)
+    private let beats = [3, 4, 4, 3, 5]
 
     private var captions: [(String, String)] {
-        [(tr("وإنت موجود، الخط ينبض", "While you're here, the line beats"),
+        [(tr("طول ما إنت تستخدم التطبيق، كل شي عادي", "As long as you use the app, nothing happens"),
           tr("كل مرة تفتح خزنتك نسجّل إنك بخير. ما نطلب منك أي شي زيادة.",
              "Every time you open your vault we note that you're fine. Nothing extra is asked of you.")),
-         (tr("لو توفّيت، الخط يسكت", "If you die, the line goes quiet"),
-          tr("لأنك ما بتفتحه. تعدّي المدة اللي حددتها — ٣٠ يوم مثلاً — وما فيه منك أي أثر.",
-             "Because you stop opening it. The period you chose — say 30 days — passes with no sign of you.")),
-         (tr("ما نستعجل: نسأل عنك كل يوم", "We don't rush: we ask after you daily"),
-          tr("البوت يطرش لك «إنت بخير؟» كل يوم مدة إضافية، عشان ما تنفّذ وصيتك وإنت حي.",
-             "The bot messages you “Are you okay?” daily for an extra period, so your will is never executed while you're alive.")),
-         (tr("ردّة وحدة وكل شي يرجع", "One answer and it all comes back"),
-          tr("تضغط «أنا بخير» — أو بس تفتح التطبيق — والعدّاد يبدأ من الصفر من جديد.",
-             "Tap “I'm fine” — or just open the app — and the counter starts again from zero.")),
-         (tr("ما رديت أبداً؟ تُسلَّم وصيتك", "No answer at all? Your will is delivered"),
-          tr("الشخص اللي اخترته يستلم وصيتك والبيانات اللي حددتها له، مرة وحدة، وبس هو.",
-             "The person you chose receives your will and the data you picked for him — once, and only him."))]
+         (tr("لو توفّيت — لا سمح الله — التلفون يسكت", "If you die — God forbid — the phone goes quiet"),
+          tr("محد يفتح التطبيق. تعدّي المدة اللي حددتها — ٣٠ يوم مثلاً — بدون أي أثر منك.",
+             "Nobody opens the app. The period you chose — say 30 days — passes with no sign of you.")),
+         (tr("ما نستعجل: البوت يسأل عنك كل يوم", "We don't rush: the bot asks after you daily"),
+          tr("يطرش لك «إنت بخير؟» كل يوم مدة إضافية، عشان وصيتك ما تتنفّذ وإنت حي.",
+             "It messages you “Are you okay?” daily for an extra period, so your will is never executed while you're alive.")),
+         (tr("ضغطة وحدة وكل شي يرجع", "One tap and everything goes back"),
+          tr("تضغط «أنا بخير» — أو بس تفتح التطبيق — والعدّاد يبدأ من الصفر.",
+             "Tap “I'm fine” — or just open the app — and the counter starts from zero.")),
+         (tr("ما رديت أبداً؟ الأمين يستلم", "No answer at all? Your trustee receives it"),
+          tr("توصله على تيليجرامه: وصيتك أول شي، وبعدها البيانات اللي حددتها له. مرة وحدة، وله هو بس.",
+             "It arrives in his Telegram: your will first, then the data you picked for him. Once, and only him."))]
     }
 
-    var body: some View {
-        VStack(spacing: 16) {
-            stage
-                .frame(height: 150)
-                .frame(maxWidth: .infinity)
-                .background(
-                    RoundedRectangle(cornerRadius: 20)
-                        .fill(Color.black.opacity(0.28))
-                        .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(Theme.stroke.opacity(0.6)))
-                )
+    private var trusteeScene: Bool { scene == 4 }
 
-            VStack(alignment: .leading, spacing: 6) {
+    var body: some View {
+        VStack(spacing: 14) {
+            // whose phone we're looking at
+            HStack(spacing: 6) {
+                Image(systemName: trusteeScene ? "person.fill" : "iphone")
+                    .font(.system(size: 11, weight: .bold))
+                Text(trusteeScene ? tr("تلفون الأمين", "Your trustee's phone") : tr("تلفونك", "Your phone"))
+                    .font(Theme.font(12, .bold))
+            }
+            .foregroundStyle(trusteeScene ? Theme.accent2 : Theme.sub)
+            .padding(.horizontal, 12).frame(height: 28)
+            .background(Capsule().fill((trusteeScene ? Theme.accent2 : Theme.sub).opacity(0.12)))
+            .id(trusteeScene)
+            .transition(.scale(scale: 0.8).combined(with: .opacity))
+
+            phone
+                .frame(width: 204, height: 322)
+                .id(trusteeScene)          // the trustee's phone slides in as a different device
+                .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity),
+                                        removal: .move(edge: .leading).combined(with: .opacity)))
+
+            VStack(spacing: 6) {
                 Text(captions[scene].0).font(Theme.font(18, .heavy)).foregroundStyle(Theme.text)
                 Text(captions[scene].1).font(Theme.font(14)).foregroundStyle(Theme.sub)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .frame(maxWidth: .infinity, minHeight: 86, alignment: .topLeading)
-            .id(scene)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity, minHeight: 92, alignment: .top)
+            .id("cap\(scene)")
             .transition(.opacity.combined(with: .move(edge: .bottom)))
 
             HStack(spacing: 6) {
-                ForEach(0..<sceneCount, id: \.self) { i in
+                ForEach(0..<captions.count, id: \.self) { i in
                     Capsule().fill(i == scene ? AnyShapeStyle(Theme.gradient) : AnyShapeStyle(Theme.surfaceHi))
-                        .frame(width: i == scene ? 22 : 7, height: 7)
-                        .onTapGesture { withAnimation(.spring(response: 0.4)) { scene = i; step = 0 } }
+                        .frame(width: i == scene ? 24 : 8, height: 8)
+                        .onTapGesture { auto = false; go(i) }
                 }
             }
         }
         .padding(16)
-        .glass(0, radius: 24, tint: scene == 4 ? Theme.accent2 : Theme.accent3)
+        .frame(maxWidth: .infinity)
+        .glass(0, radius: 24, tint: trusteeScene ? Theme.accent2 : Theme.accent3)
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture(minimumDistance: 24).onEnded { g in
+                guard abs(g.translation.width) > abs(g.translation.height) else { return }
+                auto = false
+                let forward = AppLanguage.current.isRTL ? g.translation.width > 0 : g.translation.width < 0
+                if forward, scene < captions.count - 1 { go(scene + 1) }
+                else if !forward, scene > 0 { go(scene - 1) }
+            }
+        )
         .animation(.spring(response: 0.5, dampingFraction: 0.85), value: scene)
         .task(id: scene) { await play() }
     }
 
-    /// Beats: how far the line has flattened, and how green it still is.
-    private var flat: Double { scene == 0 ? 0 : (scene == 3 ? (step >= 1 ? 0 : 1) : 1) }
-    private var lineColor: Color { flat < 0.5 ? alive : gone }
+    private func go(_ i: Int) {
+        Haptics.selection()
+        withAnimation { scene = i; step = 0 }
+    }
 
     private func play() async {
         step = 0
-        let beats = [2, 4, 4, 3, 4][scene]
-        for b in 1...beats {
-            await pause(scene == 3 && b == 1 ? 1.0 : 0.7)
+        for b in 1...beats[scene] {
+            await pause(0.75)
             if Task.isCancelled { return }
-            withAnimation(.spring(response: 0.45, dampingFraction: 0.7)) { step = b }
-            if scene == 3 && b == 1 {
-                beatPulse = true
-                Haptics.success()
-                withAnimation(.easeOut(duration: 0.6)) { beatPulse = false }
-            }
+            withAnimation(.spring(response: 0.45, dampingFraction: 0.72)) { step = b }
         }
-        await pause(scene == 4 ? 2.6 : 1.8)
-        guard !Task.isCancelled else { return }
-        withAnimation(.spring(response: 0.5)) { scene = (scene + 1) % sceneCount }
+        await pause(2.6)
+        guard auto, !Task.isCancelled else { return }
+        go((scene + 1) % captions.count)
     }
 
-    // MARK: The stage
+    // MARK: The phone
 
-    private var stage: some View {
-        GeometryReader { geo in
-            let w = geo.size.width, h = geo.size.height
-            ZStack {
-                // The line itself, alive or flat, running the full width.
-                TimelineView(.animation(minimumInterval: 1 / 30, paused: scene == 4 && step >= 2)) { ctx in
-                    let t = ctx.date.timeIntervalSinceReferenceDate
-                    PulseLine(phase: t, flat: flat)
-                        .stroke(lineColor.opacity(scene == 4 && step >= 1 ? 0.25 : 1),
-                                style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round))
-                        .shadow(color: lineColor.opacity(0.55), radius: beatPulse ? 14 : 6)
-                        .animation(.easeInOut(duration: 0.8), value: flat)
+    private var phone: some View {
+        let tint = trusteeScene ? Theme.accent2 : (scene == 1 ? Color.gray : Theme.accent3)
+        return ZStack {
+            RoundedRectangle(cornerRadius: 34).fill(Color.black.opacity(0.66))
+            Group {
+                switch scene {
+                case 0: homeScreen
+                case 1: silentScreen
+                case 2: askScreen
+                case 3: aliveScreen
+                default: trusteeScreen
                 }
-                .frame(height: 64)
-
-                sceneLayer(w: w, h: h)
             }
+            .padding(.horizontal, 13).padding(.top, 34).padding(.bottom, 15)
+            .id(scene)
+            .transition(.opacity)
+            RoundedRectangle(cornerRadius: 34).strokeBorder(
+                LinearGradient(colors: [Color.white.opacity(0.35), Color.white.opacity(0.08)], startPoint: .top, endPoint: .bottom),
+                lineWidth: 2)
+            Capsule().fill(Color.black).frame(width: 62, height: 17)
+                .frame(maxHeight: .infinity, alignment: .top).padding(.top, 10)
         }
+        .shadow(color: tint.opacity(0.3), radius: 22)
     }
 
-    @ViewBuilder
-    private func sceneLayer(w: CGFloat, h: CGFloat) -> some View {
-        switch scene {
-        case 0: aliveLayer
-        case 1: silenceLayer
-        case 2: askingLayer
-        case 3: answeredLayer
-        default: deliveryLayer(w: w)
+    private func chatHeader(_ title: String, _ sub: String, icon: String, tint: AnyShapeStyle) -> some View {
+        HStack(spacing: 7) {
+            Circle().fill(tint).frame(width: 24, height: 24)
+                .overlay(Image(systemName: icon).font(.system(size: 11, weight: .bold)).foregroundStyle(.white))
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title).font(Theme.font(10, .heavy)).foregroundStyle(Theme.text)
+                Text(sub).font(Theme.font(8)).foregroundStyle(Theme.faint)
+            }
+            Spacer(minLength: 0)
         }
+        .padding(.bottom, 5)
+        .overlay(Rectangle().fill(Theme.stroke).frame(height: 0.5), alignment: .bottom)
     }
 
-    /// Scene 1 — the vault was opened today, so the line beats.
-    private var aliveLayer: some View {
-        VStack {
-            Spacer()
-            Label(tr("فتحت خزنتك اليوم", "Vault opened today"), systemImage: "checkmark.seal.fill")
-                .font(Theme.font(11, .bold)).foregroundStyle(alive)
+    private func bubble<C: View>(_ show: Bool, tint: Color = Theme.surfaceHi, @ViewBuilder _ content: () -> C) -> some View {
+        content()
+            .padding(8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 12).fill(tint))
+            .scaleEffect(show ? 1 : 0.6, anchor: .bottomLeading)
+            .opacity(show ? 1 : 0)
+    }
+
+    /// Scene 1 — the app, in use: the eye is awake and today's visit is logged.
+    private var homeScreen: some View {
+        VStack(spacing: 9) {
+            Text("MNLOVO SAVER").font(Theme.font(9, .heavy)).tracking(2).foregroundStyle(Theme.faint)
+            EyeView(mood: .happy, size: 74, sounds: false)
+            IntroBits.row("key.horizontal.fill", "Instagram", "saif@mnlovo", tint: Theme.accent, on: step >= 1)
+            IntroBits.row("lock.doc.fill", tr("الجواز", "Passport"), tr("الخزنة", "Vault"), tint: Theme.accent2, on: step >= 2)
+            Spacer(minLength: 0)
+            Label(tr("آخر دخول: الحين ✓", "Last opened: just now ✓"), systemImage: "heart.fill")
+                .font(Theme.font(10, .bold)).foregroundStyle(Theme.ok)
                 .padding(.horizontal, 10).frame(height: 26)
-                .background(Capsule().fill(alive.opacity(0.14)))
-                .opacity(step >= 1 ? 1 : 0)
+                .background(Capsule().fill(Theme.ok.opacity(0.14)))
+                .scaleEffect(step >= 3 ? 1 : 0.7).opacity(step >= 3 ? 1 : 0)
         }
-        .padding(.bottom, 12)
     }
 
-    /// Scene 2 — the days pile up on a line that no longer moves.
-    private var silenceLayer: some View {
-        VStack(spacing: 0) {
-            Text(tr("\(min(30, step * 8)) يوم بدون أي أثر", "\(min(30, step * 8)) days with no sign"))
-                .font(Theme.font(13, .heavy)).foregroundStyle(gone)
-                .contentTransition(.numericText())
-                .padding(.top, 14)
-            Spacer()
-            // the days filling in, one tick each
+    /// Scene 2 — the same phone, untouched: a lock screen whose day counter keeps climbing.
+    private var silentScreen: some View {
+        let days = [1, 9, 18, 26, 30][min(step, 4)]
+        return VStack(spacing: 10) {
+            Spacer(minLength: 0)
+            EyeView(mood: step >= 2 ? .closed : .sleepy, size: 66, sounds: false)
+                .saturation(step >= 2 ? 0.2 : 1)
+            VStack(spacing: 0) {
+                Text("\(days)")
+                    .font(.system(size: 44, weight: .heavy, design: .rounded))
+                    .foregroundStyle(step >= 4 ? Theme.warn : Theme.text)
+                    .contentTransition(.numericText())
+                Text(tr("يوم ما انفتح التطبيق", "days since the app was opened"))
+                    .font(Theme.font(10, .bold)).foregroundStyle(Theme.faint)
+            }
+            GeometryReader { g in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Theme.surfaceHi)
+                    Capsule().fill(LinearGradient(colors: [Theme.faint, Theme.warn], startPoint: .leading, endPoint: .trailing))
+                        .frame(width: g.size.width * CGFloat(days) / 30)
+                }
+            }
+            .frame(height: 6)
+            .environment(\.layoutDirection, .leftToRight)
+            Text(step >= 4 ? tr("خلصت المدة ⏳", "The period is over ⏳") : " ")
+                .font(Theme.font(10, .bold)).foregroundStyle(Theme.warn)
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func askBubble(_ day: Int, left: Int, show: Bool, dim: Bool) -> some View {
+        bubble(show) {
+            HStack(spacing: 6) {
+                Text("🫀").font(.system(size: 12))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(tr("إنت بخير؟", "Are you okay?")).font(Theme.font(10, .heavy)).foregroundStyle(Theme.text)
+                    Text(tr("باقي \(left) أيام", "\(left) days left")).font(Theme.font(8)).foregroundStyle(Theme.warn)
+                }
+                Spacer(minLength: 0)
+                Text(tr("يوم \(day)", "Day \(day)")).font(Theme.font(8, .bold)).foregroundStyle(Theme.faint)
+            }
+        }
+        .opacity(dim ? 0.45 : 1)
+    }
+
+    /// Scene 3 — the bot's daily question, stacking up unanswered.
+    private var askScreen: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            chatHeader("MNLOVO SAVER", tr("بوت", "bot"), icon: "eye.fill", tint: AnyShapeStyle(Theme.brandGradient))
+            Spacer(minLength: 0)
+            askBubble(1, left: 7, show: step >= 1, dim: step >= 2)
+            askBubble(2, left: 6, show: step >= 2, dim: step >= 3)
+            askBubble(3, left: 5, show: step >= 3, dim: false)
+            Text(tr("❤️ أنا بخير", "❤️ I'm fine"))
+                .font(Theme.font(10, .bold)).foregroundStyle(.white)
+                .frame(maxWidth: .infinity).frame(height: 26)
+                .background(RoundedRectangle(cornerRadius: 9).fill(blue))
+                .opacity(step >= 1 ? 1 : 0)
+            Text(step >= 4 ? tr("ولا ردّ…", "No reply…") : " ")
+                .font(Theme.font(9, .bold)).foregroundStyle(Theme.danger)
+                .frame(maxWidth: .infinity)
+        }
+    }
+
+    /// Scene 4 — he taps the button, and the counter starts over.
+    private var aliveScreen: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            chatHeader("MNLOVO SAVER", tr("بوت", "bot"), icon: "eye.fill", tint: AnyShapeStyle(Theme.brandGradient))
+            Spacer(minLength: 0)
+            askBubble(3, left: 5, show: true, dim: step >= 2)
+            ZStack {
+                Text(tr("❤️ أنا بخير", "❤️ I'm fine"))
+                    .font(Theme.font(10, .bold)).foregroundStyle(.white)
+                    .frame(maxWidth: .infinity).frame(height: 26)
+                    .background(RoundedRectangle(cornerRadius: 9).fill(step >= 1 ? rose : blue))
+                    .scaleEffect(step == 1 ? 0.93 : 1)
+                if step == 1 {
+                    Image(systemName: "hand.tap.fill").font(.system(size: 18)).foregroundStyle(.white)
+                        .shadow(radius: 4).offset(x: 34, y: 10)
+                        .transition(.scale.combined(with: .opacity))
+                }
+            }
+            bubble(step >= 2, tint: Theme.ok.opacity(0.16)) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(tr("❤️ الحمدلله", "❤️ Thank God")).font(Theme.font(10, .heavy)).foregroundStyle(Theme.text)
+                    Text(tr("رجع العدّاد من الأول ✓", "Counter starts over ✓")).font(Theme.font(9)).foregroundStyle(Theme.ok)
+                }
+            }
             HStack(spacing: 3) {
-                ForEach(0..<30, id: \.self) { i in
-                    Capsule()
-                        .fill(i < step * 8 ? warm.opacity(0.75) : Theme.surfaceHi)
-                        .frame(width: 4, height: i < step * 8 ? 11 : 6)
+                ForEach(0..<12, id: \.self) { i in
+                    Capsule().fill(step >= 3 ? (i == 0 ? Theme.ok : Theme.surfaceHi) : Theme.warn.opacity(0.7))
+                        .frame(height: 5)
                 }
             }
-            .animation(.easeOut(duration: 0.5), value: step)
-            .padding(.bottom, 14)
+            .padding(.top, 2)
         }
     }
 
-    /// Scene 3 — three knocks on a flat line, none of them answered.
-    private var askingLayer: some View {
-        VStack(spacing: 8) {
-            Spacer()
-            HStack(spacing: 8) {
-                ForEach(0..<3, id: \.self) { i in
-                    HStack(spacing: 5) {
-                        Image(systemName: "heart.text.square.fill").font(.system(size: 10))
-                        Text(tr("إنت بخير؟", "Okay?")).font(Theme.font(10, .bold))
-                    }
-                    .foregroundStyle(step > i ? warm : Theme.faint.opacity(0.4))
-                    .padding(.horizontal, 9).frame(height: 26)
-                    .background(Capsule().fill(step > i ? warm.opacity(0.14) : Theme.surfaceHi.opacity(0.5)))
-                    .scaleEffect(step > i ? 1 : 0.8)
-                    .offset(y: step > i ? 0 : 8)
+    /// Scene 5 — the trustee's Telegram: the notice, then the will, then the data.
+    private var trusteeScreen: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            chatHeader("MNLOVO SAVER", tr("رسالة جديدة", "new message"), icon: "eye.fill", tint: AnyShapeStyle(Theme.brandGradient))
+            Spacer(minLength: 0)
+            bubble(step >= 1) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(tr("🕊️ أمانة سيف", "🕊️ Saif's trust")).font(Theme.font(10, .heavy)).foregroundStyle(Theme.text)
+                    Text(tr("اختارك أميناً بعد وفاته", "He chose you as his trustee")).font(Theme.font(8)).foregroundStyle(Theme.sub)
                 }
             }
-            Text(step >= 4 ? tr("ولا ردّ", "No reply") : tr("كل يوم مرة", "Once a day"))
-                .font(Theme.font(11, .bold)).foregroundStyle(step >= 4 ? Theme.danger : Theme.faint)
-            Spacer()
-        }
-    }
-
-    /// Scene 4 — he answered: the line comes back to life and the counter empties.
-    private var answeredLayer: some View {
-        VStack {
-            Spacer()
-            HStack(spacing: 7) {
-                Image(systemName: "heart.fill")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(Color(hex: 0xFF5FA2))
-                    .scaleEffect(beatPulse ? 1.35 : 1)
-                Text(step >= 1 ? tr("الحمدلله — العدّاد رجع صفر", "Thank God — counter back to zero")
-                               : tr("أنا بخير", "I'm fine"))
-                    .font(Theme.font(11, .bold)).foregroundStyle(step >= 1 ? alive : Theme.sub)
-            }
-            .padding(.horizontal, 12).frame(height: 30)
-            .background(Capsule().fill(step >= 1 ? alive.opacity(0.14) : Theme.surfaceHi))
-            Spacer()
-        }
-    }
-
-    /// Scene 5 — the flat line folds into the letter, and the letter reaches one person.
-    private func deliveryLayer(w: CGFloat) -> some View {
-        ZStack {
-            // the trustee, waiting at the end of the line
-            Image(systemName: "person.fill")
-                .font(.system(size: 15, weight: .bold))
-                .foregroundStyle(step >= 3 ? Theme.accent2 : Theme.faint)
-                .frame(width: 34, height: 34)
-                .background(Circle().fill(step >= 3 ? Theme.accent2.opacity(0.16) : Theme.surfaceHi))
-                .overlay(Circle().strokeBorder(step >= 3 ? Theme.accent2.opacity(0.5) : .clear, lineWidth: 1.5))
-                .frame(maxWidth: .infinity, alignment: .trailing)
-                .padding(.trailing, 14)
-
-            // the will, folded out of the line and carried across
-            WillPaper(open: step >= 3)
-                .frame(width: step >= 3 ? 74 : 44, height: step >= 3 ? 56 : 14)
-                .opacity(step >= 1 ? 1 : 0)
-                .offset(x: step >= 2 ? w * 0.28 : 0)
-                .animation(.spring(response: 0.75, dampingFraction: 0.8), value: step)
-
-            if step >= 4 {
-                Text(tr("مرة وحدة، وله هو بس", "Once, and only to him"))
-                    .font(Theme.font(11, .bold)).foregroundStyle(Theme.accent2)
-                    .frame(maxHeight: .infinity, alignment: .bottom)
-                    .padding(.bottom, 12)
-                    .transition(.opacity)
-            }
-        }
-    }
-}
-
-/// The will: a flat strip that unfolds into a sheet with a few written lines.
-private struct WillPaper: View {
-    let open: Bool
-
-    var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: open ? 7 : 3)
-                .fill(LinearGradient(colors: [Color(hex: 0xFFFBF0), Color(hex: 0xEADFC6)],
-                                     startPoint: .topLeading, endPoint: .bottomTrailing))
-                .shadow(color: .black.opacity(0.35), radius: open ? 10 : 3, y: 3)
-            if open {
+            // the will: a small sheet of paper, the first thing he reads
+            bubble(step >= 2, tint: Color(hex: 0xFFF4DC).opacity(0.14)) {
                 VStack(alignment: .leading, spacing: 4) {
-                    RoundedRectangle(cornerRadius: 1.5).fill(Theme.accent2.opacity(0.7)).frame(width: 30, height: 3)
-                    ForEach(0..<3, id: \.self) { i in
-                        RoundedRectangle(cornerRadius: 1.5)
-                            .fill(Color(hex: 0x6B5A3E).opacity(0.45))
-                            .frame(width: [44.0, 50.0, 34.0][i], height: 2.5)
-                    }
+                    Label(tr("الوصية", "The will"), systemImage: "scroll.fill")
+                        .font(Theme.font(9, .heavy)).foregroundStyle(Theme.accent2)
+                    IntroBits.bar(120, Theme.faint, h: 4)
+                    IntroBits.bar(104, Theme.faint, h: 4)
+                    IntroBits.bar(70, Theme.faint, h: 4)
                 }
-                .padding(.horizontal, 10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .transition(.opacity)
             }
-        }
-    }
-}
-
-/// The pulse trace. `flat` morphs it from a beating heart line to a straight one, which is the
-/// whole animation in a single number.
-private struct PulseLine: Shape {
-    let phase: Double
-    var flat: Double
-
-    var animatableData: Double {
-        get { flat }
-        set { flat = newValue }
-    }
-
-    func path(in r: CGRect) -> Path {
-        var p = Path()
-        let mid = r.midY
-        let span = r.width
-        let amp = 1 - flat
-        let shift = CGFloat((phase * 0.4).truncatingRemainder(dividingBy: 1)) * span
-        // one beat as fractions of the width; the y values scale to nothing as the line flattens
-        let beat: [(CGFloat, CGFloat)] = [(0, 0), (0.30, 0), (0.36, -0.14), (0.42, 0.36), (0.48, -0.92),
-                                          (0.54, 0.30), (0.60, -0.07), (0.66, 0), (1, 0)]
-        for cycle in -1...1 {
-            let base = CGFloat(cycle) * span - shift
-            for (i, pt) in beat.enumerated() {
-                let x = base + pt.0 * span
-                let y = mid + pt.1 * r.height * 0.5 * amp
-                if i == 0 && cycle == -1 { p.move(to: CGPoint(x: x, y: y)) } else { p.addLine(to: CGPoint(x: x, y: y)) }
+            bubble(step >= 3) {
+                Label(tr("الحسابات وكلمات السر", "Accounts and passwords"), systemImage: "key.horizontal.fill")
+                    .font(Theme.font(9, .bold)).foregroundStyle(Theme.text)
             }
+            bubble(step >= 4) {
+                Label(tr("الملاحظات والتذكيرات", "Notes and reminders"), systemImage: "note.text")
+                    .font(Theme.font(9, .bold)).foregroundStyle(Theme.text)
+            }
+            Text(step >= 5 ? tr("مرة وحدة · له هو بس 🤲", "Once · only him 🤲") : " ")
+                .font(Theme.font(9, .bold)).foregroundStyle(Theme.accent2)
+                .frame(maxWidth: .infinity)
         }
-        return p
     }
 }
 
@@ -334,7 +351,7 @@ struct LegacyView: View {
         .task { _ = await svc.refresh() }
         .onChange(of: scenePhase) { _, p in if p == .active && waiting { Task { await pollRecipient() } } }
         .sheet(item: Binding(get: { shareURL.map { ShareItem(url: $0) } }, set: { if $0 == nil { shareURL = nil } })) { item in
-            ActivityView(items: [tr("اضغط الرابط وبعدين «ابدأ» — أبيك تكون الأمين على وصيتي وبياناتي في MNLOVO SAVER، الله لا يبلانا:",
+            ActivityView(items: [tr("اضغط الرابط وبعدين «ابدأ» — أبيك تكون الأمين على وصيتي وبياناتي في MNLOVO SAVER، لا سمح الله:",
                                     "Open this link and tap Start — I'd like you to hold my will and data in MNLOVO SAVER, God forbid anything happens:"), item.url])
                 .presentationDetents([.medium])
         }

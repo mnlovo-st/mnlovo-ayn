@@ -163,7 +163,7 @@ struct TelegramSendPrompt: View {
         do {
             let n = try await TelegramService.shared.sendAccountNow(account, cipher: mode == .cipher ? cipher : nil, key: key)
             Haptics.success()
-            state.show(n > 0 ? tr("انطرش ✓", "Sent ✓") : tr("ما وصل لأي محادثة", "Didn't reach any chat"), icon: "paperplane.fill")
+            state.show(n > 0 ? tr("تم الإرسال ✓", "Sent ✓") : tr("ما وصل لأي محادثة", "Didn't reach any chat"), icon: "paperplane.fill")
         } catch {
             state.show(error.localizedDescription, icon: "exclamationmark.triangle.fill")
         }

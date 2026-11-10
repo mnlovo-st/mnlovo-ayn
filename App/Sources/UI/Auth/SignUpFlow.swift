@@ -351,7 +351,7 @@ struct SignUpFlow: View {
         VStack(spacing: 14) {
             StepHeader(icon: "scroll.fill",
                        title: tr("بعد وفاتي", "After I'm gone"),
-                       subtitle: tr("لو توفّيت — الله لا يبلانا — وصيتك وبياناتك ما تضيع. توصل لشخص واحد تختاره أنت، وبعد ما يتأكد التطبيق إنك ما عدت موجود.",
+                       subtitle: tr("لو توفّيت — لا سمح الله — وصيتك وبياناتك ما تضيع. توصل لشخص واحد تختاره أنت، وبعد ما يتأكد التطبيق إنك ما عدت موجود.",
                                     "If you die — God forbid — your will and your data aren't lost. They reach one person you choose, and only after the app has made sure you're gone."))
             LegacyExplainer()
             Toggle(isOn: $wantsLegacy) {
