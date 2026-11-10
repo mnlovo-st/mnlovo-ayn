@@ -1,0 +1,33 @@
+name: Keep server awake
+
+# Supabase's free plan pauses a project after a week with no activity.
+# This touches the database and the bot server every day so that never happens,
+# and re-enables its own schedule so GitHub doesn't switch it off after 60 quiet days.
+on:
+  schedule:
+    - cron: "17 2 * * *"   # every day, 06:17 UAE time
+  workflow_dispatch:
+
+permissions:
+  actions: write
+
+env:
+  URL: https://uwzzdoxkvqxqlwezcmer.supabase.co
+  KEY: sb_publishable_44F5yp8HkbJIWjeNJZfPww_jIu98utQ   # public key (already in the app)
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Touch the database
+        run: |
+          curl -fsS --retry 3 -X POST "$URL/rest/v1/rpc/saver_check_signup" \
+            -H "apikey: $KEY" -H "Content-Type: application/json" \
+            -d '{"p_email":"keepalive@mnlovo.invalid","p_phone_hash":"keepalive"}'
+          echo
+      - name: Touch the Telegram bot server
+        run: curl -fsS --retry 3 "$URL/functions/v1/saver-telegram"; echo
+      - name: Keep this schedule switched on
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/keepalive.yml/enable" || true

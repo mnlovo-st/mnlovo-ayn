@@ -4,7 +4,7 @@
 -- Backups are encrypted on the iPhone before upload; Supabase only ever sees ciphertext.
 
 insert into storage.buckets (id, name, public, file_size_limit)
-values ('backups', 'backups', false, 52428800)
+values ('backups', 'backups', false, 10485760)  -- 10 MB per backup (photos/videos stay on the phone)
 on conflict (id) do nothing;
 
 drop policy if exists "ayn_backups_select_own" on storage.objects;

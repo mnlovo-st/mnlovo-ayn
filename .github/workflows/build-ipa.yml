@@ -3,6 +3,10 @@ name: Build IPA
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "supabase/**"
+      - "**.md"
+      - ".github/workflows/keepalive.yml"
   workflow_dispatch:
 
 permissions:
