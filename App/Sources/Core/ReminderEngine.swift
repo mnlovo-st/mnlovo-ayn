@@ -165,15 +165,19 @@ enum ReminderEngine {
             RemindersStore.update(space, rid) { $0.snoozedUntil = Date().addingTimeInterval(3600) }
         case "ROUTINE_DONE":
             RemindersStore.update(space, rid) { r in
+                guard var ro = r.routine else { return }
                 let k = Routine.dayKey(Date())
-                if r.routine?.doneDays.contains(k) == false { r.routine?.doneDays.append(k) }
-                r.routine?.doneDays = Array((r.routine?.doneDays ?? []).suffix(400))
+                if !ro.doneDays.contains(k) { ro.doneDays.append(k) }
+                ro.doneDays = Array(ro.doneDays.suffix(400))
+                r.routine = ro
                 r.snoozedUntil = nil
             }
         case "ROUTINE_SKIP":
             RemindersStore.update(space, rid) { r in
+                guard var ro = r.routine else { return }
                 let k = Routine.dayKey(Date())
-                if r.routine?.skipDays.contains(k) == false { r.routine?.skipDays.append(k) }
+                if !ro.skipDays.contains(k) { ro.skipDays.append(k) }
+                r.routine = ro
                 r.snoozedUntil = nil
             }
         case "ROUTINE_SNOOZE":
