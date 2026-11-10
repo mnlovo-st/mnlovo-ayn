@@ -34,17 +34,7 @@ struct LoginView: View {
 
             Spacer(minLength: 6)
 
-            ZStack {
-                if rage {
-                    Circle().fill(RadialGradient(colors: [Theme.danger.opacity(0.55), .clear], center: .center, startRadius: 10, endRadius: 150))
-                        .frame(width: 300, height: 300)
-                        .transition(.scale.combined(with: .opacity))
-                }
-                EyeView(mood: mood, size: 168, sounds: true)
-                    .modifier(ShakeEffect(shakes: CGFloat(shakes)))
-                    .onTapGesture { if stage == .face { Task { await faceID() } } }
-            }
-            .frame(height: 180)
+            eyeArea
 
             VStack(spacing: 6) {
                 Text(tr("أهلاً \(state.displayName)", "Welcome back, \(state.displayName)"))
@@ -59,67 +49,40 @@ struct LoginView: View {
 
             factors
 
-            Group {
-                switch stage {
-                case .face:
-                    VStack(spacing: 12) {
-                        PrimaryButton(title: tr("افتح بـ \(Biometrics.name)", "Unlock with \(Biometrics.name)"), icon: Biometrics.icon,
-                                      loading: loading) { Task { await faceID() } }
-                        Button {
-                            state.resetBiometricStep()
-                            withAnimation(.spring) { stage = .password; mood = .idle }
-                        } label: {
-                            Text(tr("استخدم كلمة السر", "Use your password instead"))
-                                .font(Theme.font(14, .semibold)).foregroundStyle(Theme.sub)
-                        }
-                    }
-                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
-                case .password:
-                    VStack(spacing: 14) {
-                        AYNField(title: tr("كلمة السر", "Password"), icon: "key.fill", text: $password, secure: true,
-                                 contentType: .password, focus: $focus, id: .password) { Task { await submitPassword() } }
-                        PrimaryButton(title: tr("دخول", "Unlock"), icon: "lock.open.fill", loading: loading,
-                                      enabled: !password.isEmpty && lockedUntil == nil) { Task { await submitPassword() } }
-                    }
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
-                case .code:
-                    VStack(spacing: 14) {
-                        Label(tr("تحقق إضافي: \(state.failCount) محاولات غلط", "Extra check: \(state.failCount) wrong attempts"),
-                              systemImage: "exclamationmark.shield.fill")
-                            .font(Theme.font(13, .bold)).foregroundStyle(Theme.danger)
-                            .padding(.horizontal, 12).frame(height: 30)
-                            .background(Capsule().fill(Theme.danger.opacity(0.14)))
-                        if useRecoveryKey {
-                            AYNField(title: tr("مفتاح الاسترجاع (٢٤ حرف)", "Recovery key (24 chars)"), icon: "key.horizontal.fill",
-                                     text: $recoveryKey, focus: $focus, id: .recovery) { Task { await submitRecovery() } }
-                                .environment(\.layoutDirection, .leftToRight)
-                            PrimaryButton(title: tr("تحقق", "Verify"), icon: "checkmark.shield.fill", loading: loading,
-                                          enabled: PasswordTools.normalizeRecovery(recoveryKey).count == 24) { Task { await submitRecovery() } }
-                        } else {
-                            CodeField(code: $code, tint: Theme.danger, autofill: false)
-                                .onChange(of: code) { _, v in if v.count == 6 { submitCode() } }
-                            PrimaryButton(title: tr("تحقق", "Verify"), icon: "checkmark.shield.fill", enabled: code.count == 6) { submitCode() }
-                        }
-                        HStack(spacing: 18) {
-                            Button {
-                                withAnimation(.spring) { useRecoveryKey.toggle(); error = nil }
-                            } label: {
-                                Text(useRecoveryKey ? tr("استخدم رمز التحقق", "Use the 2FA code") : tr("ما عندي الرمز؟", "No code?"))
-                                    .font(Theme.font(14, .semibold)).foregroundStyle(Theme.accent)
-                            }
-                            Button {
-                                state.cancelPending()
-                                withAnimation(.spring) { stage = .password; code = ""; mood = .suspicious; rage = false }
-                            } label: {
-                                Text(tr("رجوع", "Back")).font(Theme.font(14, .semibold)).foregroundStyle(Theme.sub)
-                            }
-                        }
-                    }
-                    .transition(.asymmetric(insertion: .scale(scale: 0.8).combined(with: .opacity), removal: .opacity))
-                }
-            }
+            stageControls
             .padding(.horizontal, 24)
 
+            statusArea
+
+            Spacer()
+
+            footerLinks
+        }
+        .animation(.spring(response: 0.45, dampingFraction: 0.85), value: stage)
+        .onChange(of: focus) { _, f in
+            guard stage == .password, !loading else { return }
+            withAnimation { mood = (f == .password) ? .lookUp : .idle }
+        }
+        .onAppear(perform: start)
+        .sheet(isPresented: $showRecovery) { RecoveryView().environmentObject(state) }
+    }
+
+    private var eyeArea: some View {
+        ZStack {
+            if rage {
+                Circle().fill(RadialGradient(colors: [Theme.danger.opacity(0.55), .clear], center: .center, startRadius: 10, endRadius: 150))
+                    .frame(width: 300, height: 300)
+                    .transition(.scale.combined(with: .opacity))
+            }
+            EyeView(mood: mood, size: 168, sounds: true)
+                .modifier(ShakeEffect(shakes: CGFloat(shakes)))
+                .onTapGesture { if stage == .face { Task { await faceID() } } }
+        }
+        .frame(height: 180)
+    }
+
+    private var statusArea: some View {
+        VStack(spacing: 12) {
             if let error {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
                     .font(Theme.font(14, .semibold))
@@ -141,9 +104,11 @@ struct LoginView: View {
             if lockedUntil != nil || state.failCount >= 3 {
                 SupportButton(prominent: true).padding(.horizontal, 24)
             }
+        }
+    }
 
-            Spacer()
-
+    private var footerLinks: some View {
+        VStack(spacing: 8) {
             HStack(spacing: 16) {
                 Button { showRecovery = true } label: {
                     Text(tr("نسيت كلمة المرور؟", "Forgot password?"))
@@ -155,13 +120,72 @@ struct LoginView: View {
             }
             Text(Brand.copyright).font(Theme.font(11, .medium)).foregroundStyle(Theme.faint).padding(.bottom, 10)
         }
-        .animation(.spring(response: 0.45, dampingFraction: 0.85), value: stage)
-        .onChange(of: focus) { _, f in
-            guard stage == .password, !loading else { return }
-            withAnimation { mood = (f == .password) ? .lookUp : .idle }
+    }
+
+    private var stageControls: some View {
+        Group {
+            switch stage {
+            case .face:
+                VStack(spacing: 12) {
+                    PrimaryButton(title: tr("افتح بـ \(Biometrics.name)", "Unlock with \(Biometrics.name)"), icon: Biometrics.icon,
+                                  loading: loading) { Task { await faceID() } }
+                    Button {
+                        state.resetBiometricStep()
+                        withAnimation(.spring) { stage = .password; mood = .idle }
+                    } label: {
+                        Text(tr("استخدم كلمة السر", "Use your password instead"))
+                            .font(Theme.font(14, .semibold)).foregroundStyle(Theme.sub)
+                    }
+                }
+                .transition(.opacity.combined(with: .scale(scale: 0.96)))
+            case .password:
+                VStack(spacing: 14) {
+                    AYNField(title: tr("كلمة السر", "Password"), icon: "key.fill", text: $password, secure: true,
+                             contentType: .password, focus: $focus, id: .password) { Task { await submitPassword() } }
+                    PrimaryButton(title: tr("دخول", "Unlock"), icon: "lock.open.fill", loading: loading,
+                                  enabled: !password.isEmpty && lockedUntil == nil) { Task { await submitPassword() } }
+                }
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+            case .code:
+                codeStage
+            }
         }
-        .onAppear(perform: start)
-        .sheet(isPresented: $showRecovery) { RecoveryView().environmentObject(state) }
+    }
+
+    private var codeStage: some View {
+        VStack(spacing: 14) {
+            Label(tr("تحقق إضافي: \(state.failCount) محاولات غلط", "Extra check: \(state.failCount) wrong attempts"),
+                  systemImage: "exclamationmark.shield.fill")
+                .font(Theme.font(13, .bold)).foregroundStyle(Theme.danger)
+                .padding(.horizontal, 12).frame(height: 30)
+                .background(Capsule().fill(Theme.danger.opacity(0.14)))
+            if useRecoveryKey {
+                AYNField(title: tr("مفتاح الاسترجاع (٢٤ حرف)", "Recovery key (24 chars)"), icon: "key.horizontal.fill",
+                         text: $recoveryKey, focus: $focus, id: .recovery) { Task { await submitRecovery() } }
+                    .environment(\.layoutDirection, .leftToRight)
+                PrimaryButton(title: tr("تحقق", "Verify"), icon: "checkmark.shield.fill", loading: loading,
+                              enabled: PasswordTools.normalizeRecovery(recoveryKey).count == 24) { Task { await submitRecovery() } }
+            } else {
+                CodeField(code: $code, tint: Theme.danger, autofill: false)
+                    .onChange(of: code) { _, v in if v.count == 6 { submitCode() } }
+                PrimaryButton(title: tr("تحقق", "Verify"), icon: "checkmark.shield.fill", enabled: code.count == 6) { submitCode() }
+            }
+            HStack(spacing: 18) {
+                Button {
+                    withAnimation(.spring) { useRecoveryKey.toggle(); error = nil }
+                } label: {
+                    Text(useRecoveryKey ? tr("استخدم رمز التحقق", "Use the 2FA code") : tr("ما عندي الرمز؟", "No code?"))
+                        .font(Theme.font(14, .semibold)).foregroundStyle(Theme.accent)
+                }
+                Button {
+                    state.cancelPending()
+                    withAnimation(.spring) { stage = .password; code = ""; mood = .suspicious(0.6); rage = false }
+                } label: {
+                    Text(tr("رجوع", "Back")).font(Theme.font(14, .semibold)).foregroundStyle(Theme.sub)
+                }
+            }
+        }
+        .transition(.asymmetric(insertion: .scale(scale: 0.8).combined(with: .opacity), removal: .opacity))
     }
 
     private var caption: String {
@@ -222,7 +246,7 @@ struct LoginView: View {
             }
         } else {
             stage = .password
-            withAnimation(.easeInOut(duration: 0.8).delay(0.3)) { mood = state.needsStrongCheck ? .suspicious : .idle }
+            withAnimation(.easeInOut(duration: 0.8).delay(0.3)) { mood = state.needsStrongCheck ? .suspicious(0.6) : .idle }
         }
     }
 
@@ -268,7 +292,7 @@ struct LoginView: View {
                 : tr("كلمة السر غلط. من الحين بنطلب رمز التحقق كمان.", "Wrong password. From now on we'll also ask for the 2FA code.")
             password = ""
             await pause(1.1)
-            withAnimation { mood = state.needsStrongCheck ? .suspicious : .idle }
+            withAnimation { mood = state.needsStrongCheck ? .suspicious(0.6) : .idle }
         case .lockedOut(let until):
             withAnimation { mood = .angry }
             lockedUntil = until
@@ -288,7 +312,7 @@ struct LoginView: View {
             await pause(0.18)
         }
         await pause(0.35)
-        withAnimation(.easeInOut(duration: 0.5)) { mood = .suspicious }
+        withAnimation(.easeInOut(duration: 0.5)) { mood = .suspicious(0.6) }
         error = nil
         await pause(0.25)
         withAnimation(.spring(response: 0.5, dampingFraction: 0.75)) { stage = .code }
@@ -306,7 +330,7 @@ struct LoginView: View {
             if let until = state.lockedUntil { lockedUntil = until }
             Task {
                 await pause(1.0)
-                withAnimation { mood = .suspicious }
+                withAnimation { mood = .suspicious(0.6) }
             }
         }
     }

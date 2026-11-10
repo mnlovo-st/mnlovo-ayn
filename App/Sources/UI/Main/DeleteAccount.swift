@@ -93,7 +93,7 @@ struct DeleteAccountSheet: View {
             AYNField(title: tr("اكتبها هنا", "Type it here"), icon: "character.cursor.ibeam", text: $phrase, focus: $focus, id: .title)
             dangerButton(tr("التالي", "Next"), enabled: normalized(phrase) == normalized(expected)) { go(2) }
         }
-        .onChange(of: phrase) { _, v in withAnimation { mood = normalized(v) == normalized(expected) ? .angry : .suspicious } }
+        .onChange(of: phrase) { _, v in withAnimation { mood = normalized(v) == normalized(expected) ? .angry : .suspicious(0.6) } }
     }
 
     private var passwordStep: some View {
@@ -103,7 +103,7 @@ struct DeleteAccountSheet: View {
                      contentType: .password, focus: $focus, id: .password) { Task { await checkPassword() } }
             dangerButton(tr("تحقق", "Verify"), enabled: !password.isEmpty, loading: busy) { Task { await checkPassword() } }
         }
-        .onChange(of: focus) { _, f in withAnimation { mood = f == .password ? .lookUp : .suspicious } }
+        .onChange(of: focus) { _, f in withAnimation { mood = f == .password ? .lookUp : .suspicious(0.6) } }
     }
 
     private var codeStep: some View {
@@ -216,7 +216,7 @@ struct DeleteAccountSheet: View {
     private func go(_ s: Int) {
         focus = nil
         error = nil
-        withAnimation { step = s; mood = s == 5 ? .sleepy : .suspicious }
+        withAnimation { step = s; mood = s == 5 ? .sleepy : .suspicious(0.6) }
     }
 
     private func fail(_ msg: String) {
