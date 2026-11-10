@@ -53,15 +53,19 @@ final class TelegramService {
         var targets: [Target] = []
         var accounts = true
         var passwords = true
-        var reminders = true
-        var notes = true
-        var files = true
+        var reminders = false
+        var notes = false
+        var files = false
         var updates = false
         var includeSensitive = true
-        /// 🔴 top-secret items too (off unless the user turns it on).
-        var includeSecret = false
+        /// 🔴 top-secret items too — on by default now; the whole message is blurred anyway.
+        var includeSecret = true
         /// The whole message arrives blurred (Telegram spoiler) until tapped.
         var spoiler = true
+        /// Ask, after adding each account, whether to post it (and with which cipher).
+        var askEachTime = true
+        /// Send an intruder photo straight to Telegram the moment it's captured.
+        var intruderAlerts = true
 
         init() {}
         init(from d: Decoder) throws {
@@ -70,13 +74,15 @@ final class TelegramService {
             targets = try c.decodeIfPresent([Target].self, forKey: .targets) ?? []
             accounts = try c.decodeIfPresent(Bool.self, forKey: .accounts) ?? true
             passwords = try c.decodeIfPresent(Bool.self, forKey: .passwords) ?? true
-            reminders = try c.decodeIfPresent(Bool.self, forKey: .reminders) ?? true
-            notes = try c.decodeIfPresent(Bool.self, forKey: .notes) ?? true
-            files = try c.decodeIfPresent(Bool.self, forKey: .files) ?? true
+            reminders = try c.decodeIfPresent(Bool.self, forKey: .reminders) ?? false
+            notes = try c.decodeIfPresent(Bool.self, forKey: .notes) ?? false
+            files = try c.decodeIfPresent(Bool.self, forKey: .files) ?? false
             updates = try c.decodeIfPresent(Bool.self, forKey: .updates) ?? false
             includeSensitive = try c.decodeIfPresent(Bool.self, forKey: .includeSensitive) ?? true
-            includeSecret = try c.decodeIfPresent(Bool.self, forKey: .includeSecret) ?? false
+            includeSecret = try c.decodeIfPresent(Bool.self, forKey: .includeSecret) ?? true
             spoiler = try c.decodeIfPresent(Bool.self, forKey: .spoiler) ?? true
+            askEachTime = try c.decodeIfPresent(Bool.self, forKey: .askEachTime) ?? true
+            intruderAlerts = try c.decodeIfPresent(Bool.self, forKey: .intruderAlerts) ?? true
         }
     }
 
@@ -97,10 +103,11 @@ final class TelegramService {
         get {
             guard let d = UserDefaults.standard.data(forKey: settingsKey),
                   var s = try? JSONDecoder().decode(Settings.self, from: d) else { return Settings() }
-            if !UserDefaults.standard.bool(forKey: "tg.defaults.v2") {
-                // New defaults: send everything (passwords and 🟡 sensitive items too), fully blurred.
-                UserDefaults.standard.set(true, forKey: "tg.defaults.v2")
-                s.passwords = true; s.includeSensitive = true; s.spoiler = true
+            if !UserDefaults.standard.bool(forKey: "tg.defaults.v4") {
+                // Default message set: accounts + passwords + 🟡 + 🔴, fully blurred; reminders/notes/files off.
+                ["tg.defaults.v2", "tg.defaults.v3", "tg.defaults.v4"].forEach { UserDefaults.standard.set(true, forKey: $0) }
+                s.accounts = true; s.passwords = true; s.includeSensitive = true; s.includeSecret = true; s.spoiler = true
+                s.reminders = false; s.notes = false; s.files = false; s.updates = false
                 if let e = try? JSONEncoder().encode(s) { UserDefaults.standard.set(e, forKey: settingsKey) }
             }
             return s
@@ -205,6 +212,46 @@ final class TelegramService {
         return (r["sent"] as? NSNumber)?.intValue ?? 0
     }
 
+    /// Posts one account on demand (the per-add prompt). `cipher` nil = normal blurred message;
+    /// otherwise the whole body is run through that cipher so only the app (or the key) can read it.
+    @discardableResult
+    func sendAccountNow(_ a: AccountItem, cipher: Cipher?, key: String = "") async throws -> Int {
+        let body = format(account: a, new: true, s: settings)
+        if let cipher {
+            let blob = cipher.encode(plainAccount(a), key: key)
+            let header = tr("🔐 <b>حساب مشفّر</b>  #حسابات", "🔐 <b>Encrypted account</b>  #accounts")
+            let how = cipher == .aes
+                ? tr("🔑 ينفك بكلمة المرور من «أداة التشفير» في التطبيق.", "🔑 Decode with the password in the app's Cipher tool.")
+                : tr("🔓 الصقه في «أداة التشفير» بالتطبيق عشان يطلع واضح.", "🔓 Paste it into the app's Cipher tool to reveal it.")
+            let msg = "\(header)\n\(line)\n<code>\(Self.esc(blob))</code>\n\n\(how)\n\(footer())"
+            return try await send(msg)   // already unreadable; no spoiler needed
+        }
+        return try await send(wrap(body))
+    }
+
+    /// Plain, unformatted account text — the input for a chosen cipher.
+    private func plainAccount(_ a: AccountItem) -> String {
+        var lines = [tr("التطبيق: ", "App: ") + a.service]
+        if !a.login.isEmpty { lines.append(tr("المستخدم: ", "Login: ") + a.login) }
+        if !a.password.isEmpty { lines.append(tr("كلمة السر: ", "Password: ") + a.password) }
+        if !a.url.isEmpty { lines.append(tr("الرابط: ", "Link: ") + a.url) }
+        if !a.notes.isEmpty { lines.append(a.notes) }
+        return lines.joined(separator: "\n")
+    }
+
+    /// Sends an intruder snapshot straight to Telegram the moment it's taken (works while the app is locked).
+    func sendIntruderAlert(photo: Data?, reason: String) {
+        guard settings.intruderAlerts, cloudReady, !settings.targets.isEmpty else { return }
+        let when = Fmt.date(Date())
+        let caption = tr("🚨 <b>محاولة دخول للتطبيق</b>\n\(line)\n\(reason)\n🕒 \(Self.esc(when))\n<i>\(Brand.appName)</i>",
+                         "🚨 <b>App access attempt</b>\n\(line)\n\(reason)\n🕒 \(Self.esc(when))\n<i>\(Brand.appName)</i>")
+        Task {
+            var payload: [String: Any] = ["caption": caption]
+            if let photo { payload["photo"] = photo.base64EncodedString() }
+            _ = try? await call("alert", payload)
+        }
+    }
+
     // MARK: Events
 
     enum Event {
@@ -214,9 +261,12 @@ final class TelegramService {
         case fileAdded(VaultFile)
     }
 
-    /// Fire-and-forget; respects the user's choices and never sends 🔴 items.
+    /// Fire-and-forget; respects the user's choices (🔴 items only when the user allows them).
     func post(_ event: Event, space: VaultSpace) {
         guard space == .real, isReady else { return }
+        // When the app asks before each account, auto-posting of a new account is suppressed
+        // (the prompt handles it); everything else still flows automatically.
+        if settings.askEachTime, case .accountAdded = event { return }
         let s = settings
         func allowed(_ level: Sensitivity) -> Bool {
             level == .normal || (level == .sensitive && s.includeSensitive) || (level == .secret && s.includeSecret)
@@ -264,6 +314,12 @@ final class TelegramService {
         Self.esc(text)
     }
 
+    /// Monospace — but NOT when the whole message is blurred. Telegram refuses to blur text inside a
+    /// `<code>` block, so a copyable code tag would leave the login/password readable through the spoiler.
+    private func code(_ text: String) -> String {
+        settings.spoiler ? Self.esc(text) : "<code>\(Self.esc(text))</code>"
+    }
+
     private func footer() -> String {
         "\(line)\n🕒 \(Self.esc(Fmt.date(Date())))\n<i>\(Brand.appName)</i>"
     }
@@ -282,11 +338,12 @@ final class TelegramService {
         out += "\n\(line)\n"
         out += tr("<b>التطبيق:</b> ", "<b>App:</b> ") + v(a.service) + "\n"
         if !a.login.isEmpty {
-            out += tr("<b>المستخدم:</b> ", "<b>Login:</b> ") + "<code>\(Self.esc(a.login))</code>" + "\n"
+            out += tr("<b>المستخدم:</b> ", "<b>Login:</b> ") + code(a.login) + "\n"
         }
         if s.passwords && !a.password.isEmpty {
-            let pw = Self.esc(a.password)
-            out += tr("<b>كلمة السر:</b> ", "<b>Password:</b> ") + (s.spoiler ? "<code>\(pw)</code>" : "<tg-spoiler>\(pw)</tg-spoiler>") + "\n"
+            // When blurred the whole message is one spoiler; otherwise the password gets its own.
+            let field = s.spoiler ? Self.esc(a.password) : "<tg-spoiler>\(Self.esc(a.password))</tg-spoiler>"
+            out += tr("<b>كلمة السر:</b> ", "<b>Password:</b> ") + field + "\n"
         }
         if !a.url.isEmpty { out += tr("<b>الرابط:</b> ", "<b>Link:</b> ") + v(a.url) + "\n" }
         if a.totp != nil { out += tr("<b>2FA:</b> ✓ مفعّل\n", "<b>2FA:</b> ✓ on\n") }

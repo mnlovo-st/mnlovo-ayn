@@ -330,7 +330,7 @@ struct ReminderEditor: View {
 
                     if isNew && reminder.kind != .routine {
                         Toggle(isOn: $addToCalendar) {
-                            Label(tr("أضف للتقويم كمان", "Also add to Calendar"), systemImage: "calendar.badge.plus")
+                            Label(tr("أضف للتقويم بعد", "Also add to Calendar"), systemImage: "calendar.badge.plus")
                                 .font(Theme.font(15, .semibold))
                         }
                         .tint(Theme.accent).glass(14)

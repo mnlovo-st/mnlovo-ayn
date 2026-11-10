@@ -38,6 +38,18 @@ async function tg(cfg: Config, method: string, body: Record<string, unknown>) {
   return await r.json();
 }
 
+/** Uploads a JPEG (base64) to a chat as a photo with an HTML caption. */
+async function tgPhoto(cfg: Config, chatId: number, b64: string, caption: string) {
+  const bin = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+  const form = new FormData();
+  form.append("chat_id", String(chatId));
+  form.append("caption", caption);
+  form.append("parse_mode", "HTML");
+  form.append("photo", new Blob([bin], { type: "image/jpeg" }), "intruder.jpg");
+  const r = await fetch(`https://api.telegram.org/bot${cfg.bot_token}/sendPhoto`, { method: "POST", body: form });
+  return await r.json();
+}
+
 async function ensureWebhook(cfg: Config, force = false) {
   const info = await tg(cfg, "getWebhookInfo", {});
   const upToDate = info?.result?.url === SELF_URL && (info?.result?.allowed_updates ?? []).includes("callback_query");
@@ -368,6 +380,20 @@ Deno.serve(async (req) => {
       await admin.from("saver_tg_targets").delete().eq("user_id", user.id);
       await admin.from("saver_tg_links").delete().eq("user_id", user.id);
       return json({ ok: true });
+    }
+    case "alert": {
+      // An intruder snapshot (or a text-only security alert) to every enabled chat.
+      const caption = String(body.caption ?? "").slice(0, 1000);
+      const photo = typeof body.photo === "string" ? body.photo : null;
+      const { data: targets } = await admin.from("saver_tg_targets").select("chat_id")
+        .eq("user_id", user.id).eq("enabled", true);
+      let sent = 0;
+      for (const t of targets ?? []) {
+        const r = photo ? await tgPhoto(cfg, t.chat_id, photo, caption)
+                        : await tg(cfg, "sendMessage", { chat_id: t.chat_id, text: caption, parse_mode: "HTML" });
+        if (r?.ok) sent++;
+      }
+      return json({ sent });
     }
     case "send": {
       const text = String(body.text ?? "").slice(0, 4000);

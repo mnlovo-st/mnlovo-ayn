@@ -18,7 +18,7 @@ struct SettingsView: View {
     @State private var secretTaps = 0
 
     enum SettingsSheet: String, Identifiable {
-        case password, section, twoFA, recovery, duress, intruders, cloudSetup, backup, telegram, delete, desk
+        case password, section, twoFA, recovery, duress, intruders, cloudSetup, backup, telegram, delete, desk, cipher
         var id: String { rawValue }
     }
 
@@ -123,6 +123,11 @@ struct SettingsView: View {
                     .padding(.vertical, 10)
                 }
 
+                group(tr("أدوات", "Tools"), "wand.and.stars") {
+                    row("character.bubble.fill", tr("أداة التشفير وفك الترجمة", "Cipher & decode tool"),
+                        value: tr("\(Cipher.allCases.count) طرق", "\(Cipher.allCases.count) ways")) { sheet = .cipher }
+                }
+
                 group(tr("المظهر والصوت", "Look & sound"), "paintpalette.fill") {
                     Menu {
                         ForEach(AppLanguage.allCases) { l in
@@ -181,6 +186,7 @@ struct SettingsView: View {
                 case .telegram: TelegramSetupView()
                 case .delete: DeleteAccountSheet()
                 case .desk: SupportDeskView()
+                case .cipher: CipherToolView()
                 }
             }
             .environmentObject(state)

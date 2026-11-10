@@ -392,12 +392,15 @@ final class AppState: ObservableObject {
             let delay = min(900, 30 * pow(2, Double(n - 5)))
             defaults.set(Date().timeIntervalSince1970 + delay, forKey: "sec.lockUntil")
         }
+        let title = IntruderEvent(reason: reason, photo: nil).title
         if n >= 2 {
             IntruderCam.shared.capture { photo in
                 VaultStorage.writeInbox(IntruderEvent(reason: reason, photo: photo))
+                TelegramService.shared.sendIntruderAlert(photo: photo, reason: title)
             }
         } else {
             VaultStorage.writeInbox(IntruderEvent(reason: reason, photo: nil))
+            TelegramService.shared.sendIntruderAlert(photo: nil, reason: title)
         }
     }
 

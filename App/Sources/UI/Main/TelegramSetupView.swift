@@ -582,10 +582,18 @@ struct TelegramSetupView: View {
                 option("bell.fill", tr("التذكيرات", "Reminders"), $settings.reminders)
                 option("note.text", tr("الملاحظات", "Notes"), $settings.notes)
                 option("paperclip", tr("الملفات (الاسم والحجم بس)", "Files (name & size only)"), $settings.files)
-                option("pencil", tr("التعديلات كمان", "Edits too"), $settings.updates)
+                option("pencil", tr("التعديلات بعد", "Edits too"), $settings.updates)
                 option("shield.lefthalf.filled", tr("العناصر 🟡 الحساسة", "🟡 Sensitive items"), $settings.includeSensitive)
                 option("exclamationmark.octagon.fill", tr("حتى العناصر 🔴 السرية جداً", "Even 🔴 top-secret items"), $settings.includeSecret)
                 option("eye.trianglebadge.exclamationmark", tr("الرسالة كلها مشوّشة (تنكشف باللمس)", "Whole message blurred (tap to reveal)"), $settings.spoiler)
+            }
+            .glass(14)
+
+            // behaviour
+            VStack(alignment: .leading, spacing: 0) {
+                Text(tr("السلوك", "Behaviour")).font(Theme.font(16, .heavy)).foregroundStyle(Theme.text).padding(.bottom, 6)
+                option("hand.raised.fill", tr("اسألني قبل إرسال كل حساب (مع خيار تشفيره)", "Ask before sending each account (with a cipher option)"), $settings.askEachTime)
+                option("camera.badge.ellipsis", tr("أرسل صورة المتطفل فوراً", "Send intruder photos instantly"), $settings.intruderAlerts)
             }
             .glass(14)
 
@@ -598,6 +606,7 @@ struct TelegramSetupView: View {
             s.enabled = new.enabled; s.accounts = new.accounts; s.passwords = new.passwords; s.reminders = new.reminders
             s.notes = new.notes; s.files = new.files; s.updates = new.updates; s.includeSensitive = new.includeSensitive
             s.spoiler = new.spoiler; s.includeSecret = new.includeSecret
+            s.askEachTime = new.askEachTime; s.intruderAlerts = new.intruderAlerts
             tg.settings = s
         }
     }

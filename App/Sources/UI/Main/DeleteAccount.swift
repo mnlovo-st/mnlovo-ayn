@@ -142,7 +142,7 @@ struct DeleteAccountSheet: View {
         VStack(spacing: 16) {
             Toggle(isOn: $includeCloud) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(tr("احذف نسختي من السحابة كمان", "Also delete my cloud copy")).font(Theme.font(15, .semibold))
+                    Text(tr("احذف نسختي من السحابة بعد", "Also delete my cloud copy")).font(Theme.font(15, .semibold))
                     Text(tr("والإيميل وروابط تيليجرام من السيرفر", "Plus the email and Telegram links on the server")).font(Theme.font(12)).foregroundStyle(Theme.sub)
                 }
             }

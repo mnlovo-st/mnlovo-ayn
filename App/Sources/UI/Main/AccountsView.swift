@@ -333,6 +333,7 @@ struct AccountEditorView: View {
     @State private var scanning = false
     @State private var secretText = ""
     @State private var totpError: String?
+    @State private var tgPrompt: AccountItem?
     @FocusState private var focus: AYNFieldID?
 
     private var isNew: Bool { !state.accounts.contains { $0.id == item.id } }
@@ -403,7 +404,12 @@ struct AccountEditorView: View {
                         item.service = item.service.trimmingCharacters(in: .whitespaces)
                         state.upsert(item)
                         Haptics.success()
-                        dismiss()
+                        // New account + Telegram linked + "ask each time" → offer to post it (plain or ciphered).
+                        if isNew && !state.isDecoy && TelegramService.shared.isReady && TelegramService.shared.settings.askEachTime {
+                            tgPrompt = item
+                        } else {
+                            dismiss()
+                        }
                     }
                 }
                 .padding(20)
@@ -415,6 +421,10 @@ struct AccountEditorView: View {
                 scanning = false
                 applyTOTP(text)
             }
+        }
+        .sheet(item: $tgPrompt, onDismiss: { dismiss() }) { a in
+            TelegramSendPrompt(account: a).environmentObject(state)
+                .presentationDetents([.medium, .large])
         }
     }
 

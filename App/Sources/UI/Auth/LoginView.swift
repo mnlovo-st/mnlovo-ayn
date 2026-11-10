@@ -67,13 +67,9 @@ struct LoginView: View {
     }
 
     private var eyeArea: some View {
-        ZStack {
-            LensRings(tint: rage > 0 ? Theme.danger : Theme.accent, spinning: stage == .face || loading)
-                .frame(width: 250, height: 250)
-            EyeView(mood: mood, size: 160, sounds: true)
-                .onTapGesture { if stage == .face { Task { await faceID() } } }
-        }
-        .frame(height: 230)
+        EyeView(mood: mood, size: 170, sounds: true)
+            .onTapGesture { if stage == .face { Task { await faceID() } } }
+            .frame(height: 200)
     }
 
     private var greeting: some View {
@@ -131,16 +127,8 @@ struct LoginView: View {
 
     private var faceStage: some View {
         VStack(spacing: 14) {
-            Button { Task { await faceID() } } label: {
-                ZStack {
-                    Circle().fill(Theme.accent.opacity(0.12)).frame(width: 92, height: 92)
-                    Circle().strokeBorder(Theme.gradient, lineWidth: 1.5).frame(width: 92, height: 92)
-                    FaceFrame(active: loading).frame(width: 46, height: 46)
-                    Image(systemName: Biometrics.icon).font(.system(size: 30, weight: .medium)).foregroundStyle(Theme.accent)
-                }
-                .shadow(color: Theme.accent.opacity(0.4), radius: 18)
-            }
-            .buttonStyle(PressScale())
+            Button { Task { await faceID() } } label: { faceButton }
+                .buttonStyle(PressScale())
             Text(tr("افتح بـ \(Biometrics.name)", "Unlock with \(Biometrics.name)"))
                 .font(Theme.font(15, .bold)).foregroundStyle(Theme.text)
             Button {
@@ -153,6 +141,33 @@ struct LoginView: View {
             }
         }
         .transition(.opacity.combined(with: .scale(scale: 0.94)))
+    }
+
+    /// One clean glyph in a soft ring; while scanning a light sweeps across it.
+    private var faceButton: some View {
+        ZStack {
+            Circle()
+                .fill(RadialGradient(colors: [Theme.accent.opacity(0.22), Theme.accent.opacity(0.04)],
+                                     center: .center, startRadius: 2, endRadius: 52))
+            Circle()
+                .strokeBorder(LinearGradient(colors: [Theme.accent.opacity(0.9), Theme.accent2.opacity(0.5)],
+                                             startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1.5)
+            Image(systemName: Biometrics.icon)
+                .font(.system(size: 38, weight: .light))
+                .foregroundStyle(Theme.accent)
+                .symbolEffect(.pulse, isActive: loading)
+            if loading {
+                TimelineView(.animation(minimumInterval: 1 / 30)) { ctx in
+                    let t = ctx.date.timeIntervalSinceReferenceDate
+                    LinearGradient(colors: [.clear, Theme.accent.opacity(0.85), .clear], startPoint: .leading, endPoint: .trailing)
+                        .frame(height: 2)
+                        .offset(y: CGFloat(sin(t * 2.4)) * 30)
+                }
+                .clipShape(Circle())
+            }
+        }
+        .frame(width: 96, height: 96)
+        .shadow(color: Theme.accent.opacity(loading ? 0.5 : 0.28), radius: 20)
     }
 
     private var passwordStage: some View {
@@ -325,7 +340,7 @@ struct LoginView: View {
             let left = max(0, 3 - state.failCount)
             error = left > 0
                 ? tr("كلمة المرور غلط. باقي \(left) قبل التحقق الإضافي.", "Wrong password. \(left) left before the extra check.")
-                : tr("كلمة المرور غلط. من الحين بنطلب رمز التحقق كمان.", "Wrong password. From now on we'll also ask for the 2FA code.")
+                : tr("كلمة المرور غلط. من الحين بنطلب رمز التحقق بعد.", "Wrong password. From now on we'll also ask for the 2FA code.")
             password = ""
             await pause(1.1)
             withAnimation { mood = state.needsStrongCheck ? .glare : .idle }
@@ -397,57 +412,6 @@ struct LoginView: View {
 }
 
 // MARK: - Login decorations
-
-/// Slowly turning rings around the eye, like a camera lens.
-struct LensRings: View {
-    var tint: Color
-    var spinning: Bool
-    @State private var turn = false
-
-    var body: some View {
-        ZStack {
-            Circle().strokeBorder(tint.opacity(0.10), lineWidth: 1)
-            Circle()
-                .trim(from: 0, to: 0.72)
-                .stroke(AngularGradient(colors: [tint.opacity(0), tint.opacity(0.7), Theme.accent2.opacity(0.6), tint.opacity(0)], center: .center),
-                        style: StrokeStyle(lineWidth: 2, lineCap: .round))
-                .padding(10)
-                .rotationEffect(.degrees(turn ? 360 : 0))
-            Circle()
-                .stroke(tint.opacity(0.18), style: StrokeStyle(lineWidth: 1, dash: [2, 7]))
-                .padding(26)
-                .rotationEffect(.degrees(turn ? -360 : 0))
-        }
-        .animation(.linear(duration: spinning ? 3 : 14).repeatForever(autoreverses: false), value: turn)
-        .onAppear { turn = true }
-        .allowsHitTesting(false)
-    }
-}
-
-/// Face ID-style corner brackets that pulse while scanning.
-struct FaceFrame: View {
-    var active: Bool
-    @State private var pulse = false
-    var body: some View {
-        GeometryReader { g in
-            let s = g.size.width, l = s * 0.28
-            Path { p in
-                let corners: [(CGFloat, CGFloat, CGFloat, CGFloat)] = [(0, 0, 1, 1), (1, 0, -1, 1), (0, 1, 1, -1), (1, 1, -1, -1)]
-                for c in corners {
-                    let cx = c.0 * s, cy = c.1 * s
-                    p.move(to: CGPoint(x: cx, y: cy + c.3 * l))
-                    p.addLine(to: CGPoint(x: cx, y: cy))
-                    p.addLine(to: CGPoint(x: cx + c.2 * l, y: cy))
-                }
-            }
-            .stroke(Theme.accent.opacity(0.5), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
-        }
-        .scaleEffect(pulse ? 1.5 : 1.35)
-        .opacity(active ? 1 : 0.6)
-        .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: pulse)
-        .onAppear { pulse = true }
-    }
-}
 
 /// Small stepper showing which factors are needed and done.
 struct FactorSteps: View {
