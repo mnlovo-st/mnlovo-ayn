@@ -111,17 +111,61 @@ struct RootView: View {
     }
 }
 
+/// What the app switcher shows: the brand, locked and protected — never your data.
 struct PrivacyCover: View {
     var recording: Bool
     var body: some View {
         ZStack {
-            Rectangle().fill(.ultraThinMaterial)
-            Theme.bg.opacity(0.85)
-            VStack(spacing: 16) {
-                EyeView(mood: .closed, size: 110)
-                Text(recording ? tr("المحتوى مخفي أثناء تسجيل الشاشة", "Hidden during screen recording") : Brand.appName)
-                    .font(Theme.font(recording ? 16 : 22, .bold))
-                    .foregroundStyle(Theme.sub)
+            Theme.bg
+            RadialGradient(colors: [Theme.accent2.opacity(0.55), .clear], center: .init(x: 0.15, y: 0.1), startRadius: 0, endRadius: 420)
+            RadialGradient(colors: [Theme.accent.opacity(0.45), .clear], center: .init(x: 0.9, y: 0.85), startRadius: 0, endRadius: 460)
+            RadialGradient(colors: [Theme.accent3.opacity(0.30), .clear], center: .init(x: 0.85, y: 0.15), startRadius: 0, endRadius: 300)
+            Rectangle().fill(.ultraThinMaterial).opacity(0.35)
+
+            VStack(spacing: 22) {
+                Spacer()
+                ZStack(alignment: .bottomTrailing) {
+                    ZStack {
+                        Circle().fill(Theme.accent.opacity(0.25)).frame(width: 230, height: 230).blur(radius: 40)
+                        Circle().strokeBorder(Theme.brandGradient, lineWidth: 1.5).frame(width: 196, height: 196).opacity(0.7)
+                        Circle().strokeBorder(Color.white.opacity(0.08), lineWidth: 1).frame(width: 226, height: 226)
+                        Image("BrandIcon")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 150, height: 150)
+                            .clipShape(RoundedRectangle(cornerRadius: 36, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 36, style: .continuous).strokeBorder(Color.white.opacity(0.18), lineWidth: 1))
+                            .shadow(color: Theme.accent.opacity(0.6), radius: 26)
+                    }
+                    Image(systemName: recording ? "record.circle" : "lock.fill")
+                        .font(.system(size: 22, weight: .heavy))
+                        .foregroundStyle(Theme.bg)
+                        .frame(width: 50, height: 50)
+                        .background(Circle().fill(recording ? AnyShapeStyle(Theme.danger) : AnyShapeStyle(Theme.gradient)))
+                        .overlay(Circle().strokeBorder(Theme.bg, lineWidth: 4))
+                        .offset(x: -18, y: -14)
+                }
+                VStack(spacing: 10) {
+                    Text(Brand.appName)
+                        .font(Theme.font(34, .black))
+                        .foregroundStyle(Theme.brandGradient)
+                        .tracking(1.5)
+                    HStack(spacing: 8) {
+                        Image(systemName: recording ? "eye.slash.fill" : "checkmark.shield.fill")
+                        Text(recording ? tr("المحتوى مخفي أثناء تسجيل الشاشة", "Hidden during screen recording")
+                                       : tr("مقفلة ومحمية", "Locked & protected"))
+                    }
+                    .font(Theme.font(15, .bold))
+                    .foregroundStyle(Theme.text.opacity(0.9))
+                    .padding(.horizontal, 16).frame(height: 38)
+                    .background(Capsule().fill(Color.white.opacity(0.08)))
+                    .overlay(Capsule().strokeBorder(Color.white.opacity(0.14)))
+                }
+                Spacer()
+                Text("AES-256 · Secure Enclave")
+                    .font(Theme.font(12, .semibold)).foregroundStyle(Theme.faint).tracking(1)
+                Text(Brand.copyright).font(Theme.font(12, .bold)).foregroundStyle(Theme.faint)
+                    .padding(.bottom, 30)
             }
         }
         .ignoresSafeArea()

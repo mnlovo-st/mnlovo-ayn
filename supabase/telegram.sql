@@ -32,3 +32,7 @@ create index if not exists saver_tg_targets_tguser_idx on public.saver_tg_target
 alter table public.saver_tg_config  enable row level security;
 alter table public.saver_tg_links   enable row level security;
 alter table public.saver_tg_targets enable row level security;
+
+-- v2: share with another person ("friend") links
+alter table public.saver_tg_links add column if not exists kind text not null default 'self';
+alter table public.saver_tg_targets add column if not exists role text not null default 'owner';

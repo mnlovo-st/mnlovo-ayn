@@ -143,6 +143,7 @@ struct SectionGate<Content: View>: View {
     @State private var shakes = 0
     @State private var mood: EyeMood = .idle
     @State private var checking = false
+    @State private var forgot = false
     @FocusState private var focus: AYNFieldID?
 
     private var useBio: Bool { UserDefaults.standard.bool(forKey: "sec.sectionBiometric") && Biometrics.isAvailable }
@@ -177,11 +178,18 @@ struct SectionGate<Content: View>: View {
                                   onBiometric: { Task { await bio() } },
                                   focus: $focus) { entered in Task { await submit(entered) } }
                         .padding(.top, 6)
+                    Button { forgot = true } label: {
+                        Text(tr("نسيت رمز الأقسام؟", "Forgot section passcode?"))
+                            .font(Theme.font(15, .semibold)).foregroundStyle(Theme.accent)
+                    }
+                    .padding(.top, 4)
+                    SupportButton()
                 }
                 .padding(.horizontal, 24)
             }
             .scrollDismissesKeyboard(.interactively)
             .onAppear { if useBio { Task { await bio() } } }
+            .sheet(isPresented: $forgot) { ForgotSectionSheet().environmentObject(state) }
         }
     }
 
@@ -294,4 +302,92 @@ struct SecretUnlockSheet: View {
 struct SecretAction: Identifiable {
     let id = UUID()
     let run: () -> Void
+}
+
+
+// MARK: - Forgot section passcode: account password + (2FA code or recovery key) → new passcode
+
+struct ForgotSectionSheet: View {
+    @EnvironmentObject var state: AppState
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var verified = false
+    @State private var password = ""
+    @State private var code = ""
+    @State private var useKey = false
+    @State private var recovery = ""
+    @State private var loading = false
+    @State private var error: String?
+    @State private var mood: EyeMood = .idle
+    @FocusState private var focus: AYNFieldID?
+
+    var body: some View {
+        ZStack {
+            AuroraBackground()
+            ScrollView {
+                VStack(spacing: 14) {
+                    SheetHeader(title: tr("نسيت رمز الأقسام", "Forgot section passcode")) { dismiss() }
+                    EyeView(mood: mood, size: 90, sounds: true)
+                    if verified {
+                        PasscodeSetupFlow { newCode, kind in
+                            Task {
+                                await state.setSectionPassword(newCode, kind: kind)
+                                FX.success()
+                                state.show(tr("تم تغيير رمز الأقسام ✓", "Section passcode changed ✓"), icon: "lock.fill")
+                                dismiss()
+                            }
+                        }
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                    } else {
+                        StepHeader(icon: "person.badge.key.fill", title: tr("أثبت إنك أنت", "Prove it's you"),
+                                   subtitle: tr("كلمة مرور الحساب، وبعدها رمز التحقق المتغير أو مفتاح الاسترجاع.", "Your account password, then the 2FA code or recovery key."))
+                        AYNField(title: tr("كلمة مرور الحساب", "Account password"), icon: "key.fill", text: $password, secure: true,
+                                 contentType: .password, focus: $focus, id: .password)
+                        if useKey {
+                            AYNField(title: tr("مفتاح الاسترجاع (٢٤ حرف)", "Recovery key (24 chars)"), icon: "key.horizontal.fill",
+                                     text: $recovery, focus: $focus, id: .recovery)
+                                .environment(\.layoutDirection, .leftToRight)
+                        } else {
+                            Text(tr("رمز التحقق من «كلمات السر»:", "2FA code from Passwords:")).font(Theme.font(14, .semibold)).foregroundStyle(Theme.sub)
+                            CodeField(code: $code, autofill: false)
+                        }
+                        Button(useKey ? tr("استخدم رمز التحقق", "Use the 2FA code") : tr("ما عندي الرمز؟ استخدم مفتاح الاسترجاع", "No code? Use the recovery key")) {
+                            withAnimation { useKey.toggle(); error = nil }
+                        }
+                        .font(Theme.font(14, .semibold)).foregroundStyle(Theme.accent)
+                        if let error {
+                            Text(error).font(Theme.font(14, .semibold)).foregroundStyle(Theme.danger).multilineTextAlignment(.center)
+                            SupportButton(prominent: true)
+                        }
+                        PrimaryButton(title: tr("تحقق", "Verify"), icon: "checkmark.shield.fill", loading: loading, enabled: canVerify) {
+                            Task { await verify() }
+                        }
+                    }
+                }
+                .padding(20)
+            }
+            .scrollDismissesKeyboard(.interactively)
+        }
+        .animation(.spring(response: 0.45, dampingFraction: 0.85), value: verified)
+    }
+
+    private var canVerify: Bool {
+        !password.isEmpty && (useKey ? PasswordTools.normalizeRecovery(recovery).count == 24 : code.count == 6)
+    }
+
+    private func verify() async {
+        loading = true; defer { loading = false }
+        focus = nil
+        withAnimation { mood = .thinking }
+        do {
+            try await state.verifyForSectionReset(password: password, code: useKey ? nil : code, recoveryKey: useKey ? recovery : nil)
+            FX.success()
+            withAnimation { mood = .happy; verified = true; error = nil }
+        } catch {
+            FX.error()
+            code = ""
+            withAnimation { mood = .angry }
+            self.error = error.localizedDescription
+        }
+    }
 }

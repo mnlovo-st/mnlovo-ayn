@@ -7,10 +7,8 @@ enum AppLanguage: String, CaseIterable, Identifiable {
 
     static let storageKey = "app.lang"
 
-    static var systemDefault: AppLanguage {
-        let first = Locale.preferredLanguages.first ?? "ar"
-        return first.hasPrefix("ar") ? .ar : .en
-    }
+    /// Arabic unless the user switches to English in the app.
+    static var systemDefault: AppLanguage { .ar }
 
     static var current: AppLanguage {
         if let raw = UserDefaults.standard.string(forKey: storageKey), let l = AppLanguage(rawValue: raw) { return l }

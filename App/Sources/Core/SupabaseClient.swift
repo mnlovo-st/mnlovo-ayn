@@ -197,10 +197,22 @@ final class SupabaseClient {
                            phoneHints: obj["phone_hints"] as? [String] ?? [])
     }
 
-    func registerAccount(email: String, phone: String) async {
+    /// One-way fingerprint of the birth date, so support can confirm it when you tell them (never stored in clear).
+    static func dobHash(_ birth: Date) -> String {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = .current
+        let c = cal.dateComponents([.year, .month, .day], from: birth)
+        let day = String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
+        return SHA256.hash(data: Data("saver|dob|\(day)".utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+
+    func registerAccount(email: String, phone: String, username: String? = nil, birth: Date? = nil) async {
         guard let s = try? await validSession() else { return }
-        let body: [String: Any] = ["user_id": s.userID, "email": email.lowercased(),
-                                   "phone_hash": Self.phoneHash(phone), "email_hint": Self.emailHint(email)]
+        var body: [String: Any] = ["user_id": s.userID, "email": email.lowercased(),
+                                   "phone_hash": Self.phoneHash(phone), "email_hint": Self.emailHint(email),
+                                   "updated_at": ISO8601DateFormatter().string(from: Date())]
+        if let username { body["username"] = username }
+        if let birth { body["dob_hash"] = Self.dobHash(birth) }
         _ = try? await request("/rest/v1/saver_accounts?on_conflict=user_id", json: body, bearer: s.accessToken,
                                headers: ["Prefer": "resolution=merge-duplicates,return=minimal"])
     }
@@ -221,5 +233,30 @@ final class SupabaseClient {
         if http.statusCode == 404 || http.statusCode == 400 { throw SBError.notFound }
         guard (200..<300).contains(http.statusCode) else { throw SBError.server(message(from: data, status: http.statusCode)) }
         return data
+    }
+
+    /// Removes everything this account has on the server: backup, registry entry and Telegram links.
+    func deleteCloudData() async {
+        guard let s = try? await validSession() else { signOut(); return }
+        _ = try? await callFunction("saver-telegram", ["action": "unlink_all"])
+        _ = try? await request("/storage/v1/object/backups/\(s.userID)/vault.saver", method: "DELETE", bearer: s.accessToken)
+        _ = try? await request("/rest/v1/saver_accounts?user_id=eq.\(s.userID)", method: "DELETE", bearer: s.accessToken,
+                               headers: ["Prefer": "return=minimal"])
+        signOut()
+    }
+
+    // MARK: Support desk (admin key only)
+
+    func adminCall(key: String, _ payload: [String: Any]) async throws -> [String: Any] {
+        let (data, http) = try await request("/functions/v1/saver-admin", json: payload, headers: ["x-admin-key": key])
+        if http.statusCode == 403 { throw SBError.server(tr("مفتاح الدعم غلط.", "Wrong support key.")) }
+        if http.statusCode == 429 { throw SBError.server(tr("محاولات كثيرة، انتظر ربع ساعة.", "Too many attempts, wait 15 minutes.")) }
+        let obj = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+        guard (200..<300).contains(http.statusCode) else {
+            let e = obj["error"] as? String ?? ""
+            if e == "email_taken" { throw SBError.server(tr("هالإيميل مستخدم في حساب ثاني.", "That email belongs to another account.")) }
+            throw SBError.server(e.isEmpty ? message(from: data, status: http.statusCode) : e)
+        }
+        return obj
     }
 }

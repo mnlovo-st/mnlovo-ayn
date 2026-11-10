@@ -76,7 +76,7 @@ struct TOTP: Codable, Hashable {
         return String(repeating: "0", count: max(0, digits - s.count)) + s
     }
 
-    func verify(_ input: String, window: Int = 2, at date: Date = Date()) -> Bool {
+    func verify(_ input: String, window: Int = 3, at date: Date = Date()) -> Bool {
         let clean = input.filter { $0.isNumber }
         let latin = Self.westernDigits(clean)
         guard latin.count == digits else { return false }
@@ -91,6 +91,9 @@ struct TOTP: Codable, Hashable {
     }
 
     var secretBase32: String { Base32.encode(secret) }
+
+    /// Short fingerprint of the secret (shown in the label so duplicate entries can be told apart).
+    var fingerprint: String { String(secretBase32.prefix(4)) }
 
     var url: String {
         let label = issuer.isEmpty ? account : "\(issuer):\(account)"

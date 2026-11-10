@@ -15,9 +15,10 @@ struct SettingsView: View {
     @State private var sheet: SettingsSheet?
     @State private var confirmErase = false
     @State private var bioOn = false
+    @State private var secretTaps = 0
 
     enum SettingsSheet: String, Identifiable {
-        case password, section, twoFA, recovery, duress, intruders, cloudSetup, backup, telegram
+        case password, section, twoFA, recovery, duress, intruders, cloudSetup, backup, telegram, delete, desk
         var id: String { rawValue }
     }
 
@@ -40,7 +41,7 @@ struct SettingsView: View {
 
                 group(tr("الأمان", "Security"), "lock.shield.fill") {
                     toggleRow(Biometrics.icon, tr("\(Biometrics.name) + كلمة السر عند الدخول", "\(Biometrics.name) + password to enter"),
-                              sub: bioOn ? nil : tr("بدونه: كلمة السر + رمز التحقق كل مرة", "Without it: password + 2FA code each time"),
+                              sub: tr("رمز التحقق ينطلب بس بعد ٣ محاولات غلط", "The 2FA code is only asked after 3 wrong attempts"),
                               $bioOn)
                         .onChange(of: bioOn) { _, v in
                             guard v != state.biometricsOn else { return }
@@ -126,8 +127,17 @@ struct SettingsView: View {
                     toggleRow("hand.tap.fill", tr("الاهتزازات", "Haptics"), $haptics)
                 }
 
+                group(tr("الدعم الفني", "Support"), "lifepreserver.fill") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(tr("تورّطت في شي؟ كلّمنا مباشرة على تيليجرام أو إنستغرام.", "Stuck on something? Talk to us directly on Telegram or Instagram."))
+                            .font(Theme.font(13, .medium)).foregroundStyle(Theme.sub)
+                        SupportButton(prominent: true)
+                    }
+                    .padding(.vertical, 10)
+                }
+
                 group(tr("منطقة الخطر", "Danger zone"), "exclamationmark.triangle.fill") {
-                    row("trash.fill", tr("حذف كل شي من الجوال", "Erase everything on this iPhone"), tint: Theme.danger) { confirmErase = true }
+                    row("person.crop.circle.badge.xmark", tr("حذف الحساب نهائياً", "Delete account permanently"), tint: Theme.danger) { sheet = .delete }
                 }
 
                 VStack(spacing: 8) {
@@ -136,6 +146,10 @@ struct SettingsView: View {
                     Text(tr("AES-256 · Secure Enclave · مشفّر على جهازك", "AES-256 · Secure Enclave · encrypted on device"))
                         .font(Theme.font(11)).foregroundStyle(Theme.faint)
                     Text(Brand.copyright).font(Theme.font(12, .bold)).foregroundStyle(Theme.faint)
+                        .onTapGesture {
+                            secretTaps += 1
+                            if secretTaps >= 7 { secretTaps = 0; Haptics.success(); sheet = .desk }
+                        }
                 }
                 .padding(.top, 8)
             }
@@ -154,6 +168,8 @@ struct SettingsView: View {
                 case .cloudSetup: CloudSetupView()
                 case .backup: BackupView()
                 case .telegram: TelegramSetupView()
+                case .delete: DeleteAccountSheet()
+                case .desk: SupportDeskView()
                 }
             }
             .environmentObject(state)

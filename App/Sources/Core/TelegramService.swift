@@ -15,19 +15,35 @@ final class TelegramService {
         var title: String
         var type: String
         var enabled: Bool
+        var role: String = "owner"
 
+        init(id: Int64, title: String, type: String, enabled: Bool, role: String = "owner") {
+            self.id = id; self.title = title; self.type = type; self.enabled = enabled; self.role = role
+        }
+        init(from d: Decoder) throws {
+            let c = try d.container(keyedBy: CodingKeys.self)
+            id = try c.decode(Int64.self, forKey: .id)
+            title = try c.decodeIfPresent(String.self, forKey: .title) ?? ""
+            type = try c.decodeIfPresent(String.self, forKey: .type) ?? "private"
+            enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
+            role = try c.decodeIfPresent(String.self, forKey: .role) ?? "owner"
+        }
+
+        var isFriend: Bool { role == "friend" }
         var typeTitle: String {
+            if isFriend { return tr("شخص ثاني", "Another person") }
             switch type {
             case "channel": return tr("قناة", "Channel")
             case "group", "supergroup": return tr("قروب", "Group")
-            default: return tr("محادثتك الخاصة", "Your private chat")
+            default: return tr("محادثة البوت (الخاصة)", "Bot chat (private)")
             }
         }
         var icon: String {
+            if isFriend { return "person.2.fill" }
             switch type {
             case "channel": return "megaphone.fill"
             case "group", "supergroup": return "person.3.fill"
-            default: return "person.fill"
+            default: return "paperplane.fill"
             }
         }
     }
@@ -42,6 +58,23 @@ final class TelegramService {
         var files = true
         var updates = false
         var includeSensitive = false
+        /// Values arrive blurred (Telegram spoiler) until tapped.
+        var spoiler = true
+
+        init() {}
+        init(from d: Decoder) throws {
+            let c = try d.container(keyedBy: CodingKeys.self)
+            enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
+            targets = try c.decodeIfPresent([Target].self, forKey: .targets) ?? []
+            accounts = try c.decodeIfPresent(Bool.self, forKey: .accounts) ?? true
+            passwords = try c.decodeIfPresent(Bool.self, forKey: .passwords) ?? false
+            reminders = try c.decodeIfPresent(Bool.self, forKey: .reminders) ?? true
+            notes = try c.decodeIfPresent(Bool.self, forKey: .notes) ?? true
+            files = try c.decodeIfPresent(Bool.self, forKey: .files) ?? true
+            updates = try c.decodeIfPresent(Bool.self, forKey: .updates) ?? false
+            includeSensitive = try c.decodeIfPresent(Bool.self, forKey: .includeSensitive) ?? false
+            spoiler = try c.decodeIfPresent(Bool.self, forKey: .spoiler) ?? true
+        }
     }
 
     enum TGError: LocalizedError {
@@ -71,7 +104,7 @@ final class TelegramService {
     var cloudReady: Bool { SupabaseClient.shared.isConfigured && SupabaseClient.shared.hasSession }
     var isLinked: Bool { !settings.targets.isEmpty }
     var isReady: Bool { settings.enabled && cloudReady && settings.targets.contains { $0.enabled } }
-    var privateTarget: Target? { settings.targets.first { $0.type == "private" } }
+    var privateTarget: Target? { settings.targets.first { $0.type == "private" && !$0.isFriend } }
 
     // MARK: Server calls
 
@@ -83,8 +116,8 @@ final class TelegramService {
     }
 
     /// One-time code that ties a Telegram chat to this account (valid 30 minutes).
-    private func linkCode() async throws -> (bot: String, code: String) {
-        let r = try await call("link")
+    private func linkCode(friend: Bool = false) async throws -> (bot: String, code: String) {
+        let r = try await call("link", friend ? ["kind": "friend"] : [:])
         guard let code = r["code"] as? String else { throw TGError.server(tr("ما قدرنا نجهّز رابط الربط.", "Couldn't prepare the link.")) }
         return ((r["bot"] as? String) ?? Self.botUsername, code)
     }
@@ -101,6 +134,12 @@ final class TelegramService {
         return URL(string: "https://t.me/\(c.bot)?startgroup=\(c.code)&admin=post_messages")!
     }
 
+    /// A one-time link for another person: when they tap Start, they receive your updates too.
+    func friendLink() async throws -> URL {
+        let c = try await linkCode(friend: true)
+        return URL(string: "https://t.me/\(c.bot)?start=\(c.code)")!
+    }
+
     /// Telegram shows the user's channels; the bot is added as an admin that can only post.
     func channelLink() -> URL {
         URL(string: "https://t.me/\(Self.botUsername)?startchannel&admin=post_messages")!
@@ -113,7 +152,7 @@ final class TelegramService {
         let list = (r["targets"] as? [[String: Any]] ?? []).compactMap { t -> Target? in
             guard let id = (t["chat_id"] as? NSNumber)?.int64Value else { return nil }
             return Target(id: id, title: t["title"] as? String ?? "\(id)", type: t["type"] as? String ?? "private",
-                          enabled: t["enabled"] as? Bool ?? true)
+                          enabled: t["enabled"] as? Bool ?? true, role: t["role"] as? String ?? "owner")
         }
         var s = settings
         let wasEmpty = s.targets.isEmpty
@@ -194,6 +233,12 @@ final class TelegramService {
 
     private let line = "━━━━━━━━━━━━━━"
 
+    /// Escapes a value and, if blurring is on, hides it under a Telegram spoiler.
+    private func v(_ text: String) -> String {
+        let e = Self.esc(text)
+        return settings.spoiler ? "<tg-spoiler>\(e)</tg-spoiler>" : e
+    }
+
     private func footer() -> String {
         "\(line)\n🕒 \(Self.esc(Fmt.date(Date())))\n<i>\(Brand.appName)</i>"
     }
@@ -210,49 +255,51 @@ final class TelegramService {
         var out = new ? tr("🔐 <b>حساب جديد</b>  #حسابات", "🔐 <b>New account</b>  #accounts")
                       : tr("✏️ <b>تعديل حساب</b>  #حسابات", "✏️ <b>Account updated</b>  #accounts")
         out += "\n\(line)\n"
-        out += tr("<b>التطبيق:</b> ", "<b>App:</b> ") + Self.esc(a.service) + "\n"
-        if !a.login.isEmpty { out += tr("<b>المستخدم:</b> ", "<b>Login:</b> ") + "<code>\(Self.esc(a.login))</code>\n" }
+        out += tr("<b>التطبيق:</b> ", "<b>App:</b> ") + v(a.service) + "\n"
+        if !a.login.isEmpty {
+            out += tr("<b>المستخدم:</b> ", "<b>Login:</b> ") + (s.spoiler ? v(a.login) : "<code>\(Self.esc(a.login))</code>") + "\n"
+        }
         if s.passwords && !a.password.isEmpty {
             out += tr("<b>كلمة السر:</b> ", "<b>Password:</b> ") + "<tg-spoiler>\(Self.esc(a.password))</tg-spoiler>\n"
         }
-        if !a.url.isEmpty { out += tr("<b>الرابط:</b> ", "<b>Link:</b> ") + Self.esc(a.url) + "\n" }
+        if !a.url.isEmpty { out += tr("<b>الرابط:</b> ", "<b>Link:</b> ") + v(a.url) + "\n" }
         if a.totp != nil { out += tr("<b>2FA:</b> ✓ مفعّل\n", "<b>2FA:</b> ✓ on\n") }
         out += tr("<b>الحساسية:</b> ", "<b>Level:</b> ") + levelText(a.sensitivity) + "\n"
-        if !a.notes.isEmpty { out += "📝 " + Self.esc(String(a.notes.prefix(800))) + "\n" }
+        if !a.notes.isEmpty { out += "📝 " + v(String(a.notes.prefix(800))) + "\n" }
         return out + footer()
     }
 
     func format(note n: SecureNote, new: Bool) -> String {
         var out = new ? tr("📝 <b>ملاحظة جديدة</b>  #ملاحظات", "📝 <b>New note</b>  #notes")
                       : tr("✏️ <b>تعديل ملاحظة</b>  #ملاحظات", "✏️ <b>Note updated</b>  #notes")
-        out += "\n\(line)\n<b>\(Self.esc(n.title))</b>\n"
-        out += Self.esc(String(n.body.prefix(3200))) + "\n"
+        out += "\n\(line)\n<b>\(v(n.title))</b>\n"
+        out += v(String(n.body.prefix(3200))) + "\n"
         out += tr("<b>الحساسية:</b> ", "<b>Level:</b> ") + levelText(n.sensitivity) + "\n"
         return out + footer()
     }
 
     func format(reminder r: Reminder, header: String) -> String {
         var out = header + tr("  #تذكيرات", "  #reminders") + "\n\(line)\n"
-        out += "<b>\(Self.esc(r.title))</b>\n"
+        out += "<b>\(v(r.title))</b>\n"
         out += tr("<b>النوع:</b> ", "<b>Type:</b> ") + r.kind.title + "\n"
         out += tr("<b>الموعد:</b> ", "<b>Due:</b> ") + Self.esc(Fmt.date(r.due)) + "\n"
         if !r.done { out += "⏳ " + Self.esc(Fmt.remaining(until: r.due)) + "\n" }
-        if !r.notes.isEmpty { out += "📝 " + Self.esc(String(r.notes.prefix(800))) + "\n" }
+        if !r.notes.isEmpty { out += "📝 " + v(String(r.notes.prefix(800))) + "\n" }
         return out + footer()
     }
 
     func format(file f: VaultFile) -> String {
         var out = tr("📎 <b>ملف جديد في الخزنة</b>  #الخزنة", "📎 <b>New file in the vault</b>  #vault")
         out += "\n\(line)\n"
-        out += tr("<b>الاسم:</b> ", "<b>Name:</b> ") + Self.esc(f.name) + "\n"
+        out += tr("<b>الاسم:</b> ", "<b>Name:</b> ") + v(f.name) + "\n"
         out += tr("<b>الحجم:</b> ", "<b>Size:</b> ") + Fmt.bytes(f.size) + "\n"
         out += tr("<i>الملف نفسه يبقى مشفّر في جوالك، ما ينرسل.</i>\n", "<i>The file itself stays encrypted on your phone.</i>\n")
         return out + footer()
     }
 
     func testMessage() -> String {
-        tr("👋 <b>تم ربط \(Brand.appName)</b>\n\(line)\nمن الحين أي شي تضيفه في التطبيق بيوصل هنا مرتّب.\n🔴 الأشياء السرية جداً ما تنرسل أبداً.\n",
-           "👋 <b>\(Brand.appName) connected</b>\n\(line)\nFrom now on, whatever you add in the app shows up here, neatly formatted.\n🔴 Top-secret items are never sent.\n")
+        tr("👋 <b>رسالة تجريبية من \(Brand.appName)</b>\n\(line)\nكذا بتوصلك الأشياء: \(v("النص مشوّش، اضغط عليه عشان يبين"))\n🔴 الأشياء السرية جداً ما تنرسل أبداً.\n",
+           "👋 <b>Test message from \(Brand.appName)</b>\n\(line)\nThis is how items arrive: \(v("blurred text, tap to reveal"))\n🔴 Top-secret items are never sent.\n")
             + footer()
     }
 }

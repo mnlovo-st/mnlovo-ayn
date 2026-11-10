@@ -122,7 +122,7 @@ struct SignUpFlow: View {
         switch step {
         case 0:
             return input.username.trimmingCharacters(in: .whitespaces).count >= 2 && isValidEmail(input.email)
-                && TOTP.westernDigits(input.phone).filter { $0.isASCII && $0.isNumber }.count >= 7
+                && PhoneNumber.isValid(input.phone)
         case 1: return PasswordCreator.isAcceptable(input.password, confirm)
         case 2: return !sb.isConfigured || input.emailVerified || emailCode.count >= 6
         case 3: return totpCode.count == 6
@@ -144,7 +144,9 @@ struct SignUpFlow: View {
         error = nil
         switch step {
         case 0:
-            input.totp.account = input.username.trimmingCharacters(in: .whitespaces)
+            // The label carries a short fingerprint so an old entry in Passwords can't be mistaken for this one.
+            input.totp.account = "\(input.username.trimmingCharacters(in: .whitespaces)) · \(input.totp.fingerprint)"
+            TOTPCarry.save(input.totp)
             Task { await checkRegistry() }
         case 1:
             go(2)
@@ -186,8 +188,7 @@ struct SignUpFlow: View {
                      contentType: .username, focus: $focus, id: .username) { focus = .email }
             AYNField(title: tr("الإيميل", "Email"), icon: "envelope.fill", text: $input.email,
                      keyboard: .emailAddress, contentType: .emailAddress, focus: $focus, id: .email) { focus = .phone }
-            AYNField(title: tr("رقم التلفون", "Phone number"), icon: "phone.fill", text: $input.phone,
-                     keyboard: .phonePad, contentType: .telephoneNumber, focus: $focus, id: .phone)
+            PhoneField(full: $input.phone, focus: $focus)
             HStack {
                 Image(systemName: "gift.fill").foregroundStyle(Theme.sub).frame(width: 24)
                 Text(tr("تاريخ الميلاد", "Date of birth")).font(Theme.font(17, .medium)).foregroundStyle(Theme.sub)
@@ -274,7 +275,7 @@ struct SignUpFlow: View {
             TwoFactorSetupCard(totp: input.totp)
             Text(tr("اكتب الرمز اللي يطلع لك:", "Enter the code it shows:"))
                 .font(Theme.font(15, .semibold)).foregroundStyle(Theme.text)
-            CodeField(code: $totpCode)
+            CodeField(code: $totpCode, autofill: false)
                 .onChange(of: totpCode) { _, v in if v.count == 6 { next() } }
         }
     }

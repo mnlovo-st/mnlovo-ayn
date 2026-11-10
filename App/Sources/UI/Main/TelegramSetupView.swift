@@ -160,7 +160,7 @@ struct TelegramGuide: View {
     var body: some View {
         VStack(spacing: 14) {
             HStack {
-                Label(tr("شلون أربطه؟ خطوة بخطوة", "How to link, step by step"), systemImage: "play.rectangle.fill")
+                Label(tr("كيف أربطه؟ خطوة بخطوة", "How to link, step by step"), systemImage: "play.rectangle.fill")
                     .font(Theme.font(15, .heavy)).foregroundStyle(Theme.text)
                 Spacer()
                 Text("\(scene + 1)/\(steps.count)").font(Theme.mono(13, .bold)).foregroundStyle(Theme.sub)
@@ -400,11 +400,14 @@ struct TelegramSetupView: View {
     @State private var eye: EyeMood = .idle
     @State private var showCloud = false
     @State private var removing: TelegramService.Target?
+    @State private var showChoice = false
+    @State private var exclusive = false
+    @State private var shareURL: URL?
 
     private let tg = TelegramService.shared
     private let blue = TelegramService.blue
     private var linked: Bool { !settings.targets.isEmpty }
-    private var hasPrivate: Bool { settings.targets.contains { $0.type == "private" } }
+    private var hasPrivate: Bool { settings.targets.contains { $0.type == "private" && !$0.isFriend } }
 
     var body: some View {
         SheetScaffold(title: tr("تيليجرام", "Telegram")) {
@@ -432,6 +435,22 @@ struct TelegramSetupView: View {
             if p == .active { Task { await refresh() } }
         }
         .sheet(isPresented: $showCloud) { CloudSetupView().environmentObject(state) }
+        .sheet(isPresented: $showChoice) {
+            DestinationChoiceSheet { choice in
+                showChoice = false
+                switch choice {
+                case .bot: state.show(tr("تمام ✓ بيوصلك كل شي في محادثة البوت", "Done ✓ everything goes to the bot chat"), icon: "paperplane.fill")
+                case .group: exclusive = true; Task { await addGroup() }
+                case .channel: exclusive = true; addChannel()
+                case .person: exclusive = true; Task { await addPerson() }
+                }
+            }
+            .presentationDetents([.medium, .large])
+        }
+        .sheet(item: Binding(get: { shareURL.map { ShareItem(url: $0) } }, set: { if $0 == nil { shareURL = nil } })) { item in
+            ActivityView(items: [tr("اضغط الرابط وبعدين «ابدأ» عشان توصلك تحديثاتي من MNLOVO SAVER:", "Tap the link, then “Start”, to get my MNLOVO SAVER updates:"), item.url])
+                .presentationDetents([.medium])
+        }
         .confirmationDialog(tr("إلغاء الربط؟", "Unlink?"), isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
                             titleVisibility: .visible, presenting: removing) { t in
             Button(tr("إلغاء ربط \(t.title)", "Unlink \(t.title)"), role: .destructive) { Task { await remove(t) } }
@@ -517,10 +536,15 @@ struct TelegramSetupView: View {
                         Task { await linkPrivate() }
                     }
                 }
-                HStack(spacing: 10) {
+                HStack(spacing: 8) {
                     addButton(tr("أضف قروب", "Add group"), "person.3.fill", key: "group") { Task { await addGroup() } }
                     addButton(tr("أضف قناة", "Add channel"), "megaphone.fill", key: "channel") { addChannel() }
+                    addButton(tr("أضف شخص", "Add person"), "person.2.fill", key: "person") { Task { await addPerson() } }
                 }
+                Label(tr("تقدر تتحكم من تيليجرام نفسه: اكتب للبوت /menu (إيقاف، مشاركة، فصل، مساعدة في الاسترجاع).",
+                         "You can also control it from Telegram: send /menu to the bot (pause, share, unlink, recovery help)."),
+                      systemImage: "command")
+                    .font(Theme.font(12, .medium)).foregroundStyle(Theme.sub)
                 if waitingSince != nil {
                     HStack(spacing: 8) {
                         ProgressView().tint(blue)
@@ -534,11 +558,13 @@ struct TelegramSetupView: View {
                                                        "Group: tap “Add group” → Telegram lists your groups → pick one → “Add”. The group gets a “Linked ✓” message."))
                         guideLine("megaphone.fill", tr("قناة: اضغط «أضف قناة» ← اختر قناتك ← «إضافة كمشرف» (صلاحية النشر بس) ← «حفظ».",
                                                         "Channel: tap “Add channel” → pick your channel → “Add as admin” (post only) → “Save”."))
+                        guideLine("person.2.fill", tr("شخص: اضغط «أضف شخص» ← أرسل له الرابط ← يفتحه ويضغط «ابدأ». الرابط لمرة وحدة ولمدة ٣٠ دقيقة.",
+                                                       "Person: tap “Add person” → send them the link → they open it and tap “Start”. One-time link, valid 30 minutes."))
                         guideLine("person.badge.minus", tr("تبي توقفه؟ اضغط ✕ جنب أي وحدة، والبوت يطلع لحاله.", "Want to stop? Tap ✕ next to any of them and the bot leaves by itself."))
                     }
                     .padding(.top, 6)
                 } label: {
-                    Label(tr("شلون أضيف قروب أو قناة؟", "How do I add a group or channel?"), systemImage: "questionmark.circle.fill")
+                    Label(tr("كيف أضيف قروب أو قناة أو شخص؟", "How do I add a group, channel or person?"), systemImage: "questionmark.circle.fill")
                         .font(Theme.font(14, .bold)).foregroundStyle(blue)
                 }
                 .tint(blue)
@@ -555,6 +581,7 @@ struct TelegramSetupView: View {
                 option("paperclip", tr("الملفات (الاسم والحجم بس)", "Files (name & size only)"), $settings.files)
                 option("pencil", tr("التعديلات كمان", "Edits too"), $settings.updates)
                 option("shield.lefthalf.filled", tr("العناصر 🟡 الحساسة", "🟡 Sensitive items"), $settings.includeSensitive)
+                option("eye.trianglebadge.exclamationmark", tr("النصوص مشوّشة (تنكشف باللمس)", "Blurred text (tap to reveal)"), $settings.spoiler)
             }
             .glass(14)
 
@@ -566,6 +593,7 @@ struct TelegramSetupView: View {
             var s = tg.settings
             s.enabled = new.enabled; s.accounts = new.accounts; s.passwords = new.passwords; s.reminders = new.reminders
             s.notes = new.notes; s.files = new.files; s.updates = new.updates; s.includeSensitive = new.includeSensitive
+            s.spoiler = new.spoiler
             tg.settings = s
         }
     }
@@ -658,6 +686,16 @@ struct TelegramSetupView: View {
 
     private func addChannel() { open(tg.channelLink()) }
 
+    private func addPerson() async {
+        busy = "person"; defer { busy = nil }
+        do {
+            let url = try await tg.friendLink()
+            shareURL = url
+            withAnimation { waitingSince = Date(); eye = .lookUp }
+            error = nil
+        } catch { self.error = error.localizedDescription; FX.error() }
+    }
+
     private func refresh() async {
         guard tg.cloudReady, !state.isDecoy else { return }
         let before = Set(settings.targets.map(\.id))
@@ -665,8 +703,17 @@ struct TelegramSetupView: View {
         let fresh = tg.settings
         withAnimation(.spring(response: 0.5)) { settings = fresh }
         let added = list.filter { !before.contains($0.id) }
-        if !added.isEmpty && (waitingSince != nil || !before.isEmpty) {
-            celebrate(added.first!)
+        if let first = added.first, waitingSince != nil || !before.isEmpty {
+            celebrate(first)
+            let isBotChat = first.type == "private" && !first.isFriend
+            if isBotChat && list.count == 1 {
+                // First link: let them choose where messages should go.
+                Task { await pause(1.6); showChoice = true }
+            } else if exclusive, !isBotChat, let botChat = list.first(where: { $0.type == "private" && !$0.isFriend && $0.enabled }) {
+                exclusive = false
+                await toggle(botChat, false)
+                state.show(tr("صار الإرسال لـ \(first.title) بدل محادثة البوت", "Now sending to \(first.title) instead of the bot chat"), icon: "arrow.triangle.swap")
+            }
         }
     }
 
@@ -720,4 +767,70 @@ struct TelegramSetupView: View {
             }
         } catch { self.error = error.localizedDescription; FX.error() }
     }
+}
+
+
+// MARK: - Choose where messages go (shown after the first link)
+
+enum TelegramDestination { case bot, group, channel, person }
+
+struct DestinationChoiceSheet: View {
+    var onPick: (TelegramDestination) -> Void
+    private let blue = TelegramService.blue
+
+    var body: some View {
+        ZStack {
+            AuroraBackground()
+            ScrollView {
+                VStack(spacing: 12) {
+                    EyeView(mood: .happy, size: 70, sounds: false).padding(.top, 18)
+                    Text(tr("وين تبي توصلك الرسائل؟", "Where should messages go?"))
+                        .font(Theme.font(22, .heavy)).foregroundStyle(Theme.text)
+                    Text(tr("تقدر تغيّر أو تضيف أكثر من وحدة بعدين.", "You can change it or add more later."))
+                        .font(Theme.font(13)).foregroundStyle(Theme.sub)
+                    choice(.bot, "paperplane.fill", tr("محادثة البوت", "The bot chat"), tr("خاص فيك بس — الأسهل", "Just for you — easiest"))
+                    choice(.group, "person.3.fill", tr("قروب", "A group"), tr("تختار قروب من قروباتك", "Pick one of your groups"))
+                    choice(.channel, "megaphone.fill", tr("قناة", "A channel"), tr("البوت ينشر فيها كمشرف (نشر فقط)", "The bot posts as an admin (post only)"))
+                    choice(.person, "person.2.fill", tr("شخص ثاني", "Another person"), tr("ترسل له رابط ويضغط «ابدأ»", "Send them a link, they tap Start"))
+                }
+                .padding(20)
+            }
+        }
+    }
+
+    private func choice(_ d: TelegramDestination, _ icon: String, _ title: String, _ sub: String) -> some View {
+        Button {
+            Haptics.selection()
+            onPick(d)
+        } label: {
+            HStack(spacing: 14) {
+                Image(systemName: icon).font(.system(size: 18, weight: .bold)).foregroundStyle(.white)
+                    .frame(width: 44, height: 44)
+                    .background(RoundedRectangle(cornerRadius: 13).fill(blue))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(Theme.font(16, .heavy)).foregroundStyle(Theme.text)
+                    Text(sub).font(Theme.font(12)).foregroundStyle(Theme.sub)
+                }
+                Spacer()
+                Image(systemName: "chevron.forward").foregroundStyle(Theme.faint)
+            }
+            .padding(12)
+            .background(RoundedRectangle(cornerRadius: 18).fill(Theme.surface))
+            .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Theme.stroke))
+        }
+        .buttonStyle(PressScale())
+    }
+}
+
+struct ShareItem: Identifiable {
+    let url: URL
+    var id: String { url.absoluteString }
+}
+
+struct ActivityView: UIViewControllerRepresentable {
+    var items: [Any]
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+    func updateUIViewController(_ vc: UIActivityViewController, context: Context) {}
 }

@@ -5,6 +5,7 @@ import UserNotifications
 
 enum AppError: LocalizedError {
     case wrongPassword, samePassword, identityMismatch, wrongRecovery, locked, notUnlocked, badBackup
+    case wrongCode, clockOff, noFaceID, faceFailed
 
     var errorDescription: String? {
         switch self {
@@ -15,6 +16,13 @@ enum AppError: LocalizedError {
         case .locked: return tr("التطبيق مقفل مؤقتاً بسبب محاولات كثيرة.", "Temporarily locked after too many attempts.")
         case .notUnlocked: return tr("الخزنة مقفلة.", "The vault is locked.")
         case .badBackup: return tr("ملف النسخة الاحتياطية تالف أو كلمة السر غلط.", "Backup file is damaged or the password is wrong.")
+        case .wrongCode: return tr("رمز التحقق غلط. استخدم الرمز اللي يطلع الحين في «كلمات السر» تحت اسم MNLOVO SAVER.",
+                                   "Wrong code. Use the code currently shown in Passwords under MNLOVO SAVER.")
+        case .clockOff: return tr("الرمز كان صحيح بس ساعة جوالك مو مضبوطة. فعّل «ضبط تلقائي» للوقت من الإعدادات ← عام ← التاريخ والوقت.",
+                                  "The code is right but your iPhone clock is off. Turn on Set Automatically in Settings → General → Date & Time.")
+        case .noFaceID: return tr("هالطريقة تحتاج \(Biometrics.name) مفعّل على هالجوال. استخدم مفتاح الاسترجاع بدالها.",
+                                  "This method needs \(Biometrics.name) set up on this iPhone. Use your recovery key instead.")
+        case .faceFailed: return tr("فشل التحقق بالوجه.", "Face check failed.")
         }
     }
 }
@@ -27,7 +35,7 @@ struct NewAccountInput {
     var password = ""
     /// Re-uses the 2FA secret from an earlier sign-up attempt (or install), so the code already
     /// saved in the iPhone Passwords app keeps working.
-    var totp = TOTPCarry.load() ?? TOTP.generate(issuer: Brand.issuer, account: "")
+    var totp = TOTPCarry.loadOrCreate()
     var recoveryKey = PasswordTools.recoveryKey()
     var emailVerified = false
     var enableBiometrics = true
@@ -46,7 +54,16 @@ enum TOTPCarry {
     static func save(_ t: TOTP) {
         if let d = try? JSONEncoder().encode(t) { Keychain.set(d, account: account) }
     }
+    /// Saved the moment it's created, so an abandoned sign-up never leaves a code in Passwords that no longer works.
+    static func loadOrCreate() -> TOTP {
+        if let t = load() { return t }
+        let t = TOTP.generate(issuer: Brand.issuer, account: "")
+        save(t)
+        return t
+    }
 }
+
+enum TOTPCheck: Equatable { case ok, adopted(TOTP), clockOff, wrong }
 
 struct BackupBundle: Codable {
     var version = 1
@@ -189,7 +206,7 @@ final class AppState: ObservableObject {
         }.value
 
         var totp = n.totp
-        totp.account = n.username
+        if totp.account.isEmpty { totp.account = "\(n.username) · \(totp.fingerprint)" }
         TOTPCarry.save(totp)
         var prof = Profile(username: n.username, email: n.email.lowercased(), phone: n.phone, birthDate: n.birthDate,
                            emailVerified: n.emailVerified, totp: totp,
@@ -220,7 +237,7 @@ final class AppState: ObservableObject {
         defaults.set(true, forKey: "backup.dirty")
         openVault(.real, key: mk, profile: prof)
         if !n.duressPassword.isEmpty { try? await setupDuress(password: n.duressPassword) }
-        Task { await SupabaseClient.shared.registerAccount(email: n.email, phone: n.phone) }
+        Task { await SupabaseClient.shared.registerAccount(email: n.email, phone: n.phone, username: n.username, birth: n.birthDate) }
         celebration = Celebration(title: tr("أهلاً \(n.username)! 🎉", "Welcome, \(n.username)! 🎉"),
                                   subtitle: tr("حسابك جاهز ومحمي بالكامل", "Your account is ready and fully protected"))
     }
@@ -255,13 +272,14 @@ final class AppState: ObservableObject {
         async let r = Self.unwrap(password, salt: real?.salt, wrapped: real?.wrappedByPassword, tag: "pw")
         async let d = Self.unwrap(password, salt: decoy?.salt, wrapped: decoy?.wrappedByPassword, tag: "pw")
         let (rk, dk) = await (r, d)
+        let strong = needsStrongCheck
         if let rk {
-            if bioPassed { openVault(.real, key: rk); return .unlocked }
+            if !strong { openVault(.real, key: rk); return .unlocked }
             pending = (.real, rk)
             return .needs2FA
         }
         if let dk, decoy != nil {
-            if bioPassed { openVault(.decoy, key: dk); return .unlocked }
+            if !strong { openVault(.decoy, key: dk); return .unlocked }
             pending = (.decoy, dk)
             return .needs2FA
         }
@@ -270,10 +288,67 @@ final class AppState: ObservableObject {
         return .wrong
     }
 
+    /// After 3 wrong attempts the 2FA code is required as an extra check.
+    var needsStrongCheck: Bool { defaults.integer(forKey: "sec.failCount") >= 3 }
+    var failCount: Int { defaults.integer(forKey: "sec.failCount") }
+    @Published var lastCodeProblem: AppError?
+
+    /// Checks a 2FA code against the account (and the secret kept on this device, in case the
+    /// Passwords app holds that one). Never weaker: both secrets live only on this iPhone.
+    nonisolated static func checkTOTP(_ code: String, _ totp: TOTP) -> TOTPCheck {
+        if totp.verify(code) { return .ok }
+        if let c = TOTPCarry.load(), c.secret != totp.secret, c.verify(code) { return .adopted(c) }
+        if totp.verify(code, window: 30) { return .clockOff }
+        return .wrong
+    }
+
+    /// Applies a check to a profile; saves the adopted secret so future codes keep matching.
+    private func applyTOTP(_ code: String, profile prof: inout Profile, space s: VaultSpace, key: SymmetricKey) -> Bool {
+        switch Self.checkTOTP(code, prof.totp) {
+        case .ok:
+            lastCodeProblem = nil
+            return true
+        case .adopted(let c):
+            var t = c
+            t.account = prof.totp.account
+            prof.totp = t
+            try? VaultStorage.save(prof, "profile.enc", space: s, key: key)
+            defaults.set(true, forKey: "backup.dirty")
+            lastCodeProblem = nil
+            return true
+        case .clockOff:
+            lastCodeProblem = .clockOff
+            return false
+        case .wrong:
+            lastCodeProblem = .wrongCode
+            return false
+        }
+    }
+
+    /// Checks a code against the open vault's profile (section reset, delete account…).
+    func checkCodeNow(_ code: String) -> Bool {
+        guard var prof = profile, let mk = masterKey else { return false }
+        let ok = applyTOTP(code, profile: &prof, space: space, key: mk)
+        if ok { profile = prof }
+        return ok
+    }
+
+    /// Alternative to the 2FA code at the strong check: the recovery key.
+    func verifyPendingRecovery(_ key: String) async -> Bool {
+        guard let p = pending, let meta = VaultStorage.loadMeta(p.space), meta.wrappedByRecovery != nil,
+              let k = await Self.unwrap(PasswordTools.normalizeRecovery(key), salt: meta.recoverySalt,
+                                        wrapped: meta.wrappedByRecovery, tag: "rk") else {
+            registerFailure(.wrongCode)
+            return false
+        }
+        openVault(p.space, key: k)
+        return true
+    }
+
     func verify2FA(_ code: String) -> Bool {
         guard let p = pending,
-              let prof = VaultStorage.load(Profile.self, "profile.enc", space: p.space, key: p.key) else { return false }
-        if prof.totp.verify(code) {
+              var prof = VaultStorage.load(Profile.self, "profile.enc", space: p.space, key: p.key) else { return false }
+        if applyTOTP(code, profile: &prof, space: p.space, key: p.key) {
             // Face ID was invalidated (e.g. a new face added) → quietly set it up again.
             if p.space == .real && biometricsWanted && !SecureEnclaveVault.isEnrolled(.real)
                 && Biometrics.isAvailable && SecureEnclaveVault.isAvailable {
@@ -310,6 +385,7 @@ final class AppState: ObservableObject {
         masterKey = key
         space = s
         profile = prof
+        if s == .real && TOTPCarry.load() == nil { TOTPCarry.save(prof.totp) }
         if RemindersStore.key(s) == nil { RemindersStore.installKey(prof.remindersKey, space: s) }
         accounts = VaultStorage.load([AccountItem].self, "accounts.enc", space: s, key: key) ?? []
         notes = VaultStorage.load([SecureNote].self, "notes.enc", space: s, key: key) ?? []
@@ -327,6 +403,13 @@ final class AppState: ObservableObject {
         ReminderEngine.rescheduleAll()
         LiveActivityManager.sync()
         if s == .real {
+            if cloudReady && !defaults.bool(forKey: "registry.v2") {
+                let p = prof
+                Task {
+                    await SupabaseClient.shared.registerAccount(email: p.email, phone: p.phone, username: p.username, birth: p.birthDate)
+                    UserDefaults.standard.set(true, forKey: "registry.v2")
+                }
+            }
             countNewIntrusions()
             if defaults.bool(forKey: "backup.dirty") || (lastBackup.map { Date().timeIntervalSince($0) > 86400 } ?? true) {
                 scheduleBackup(delay: 1.5)
@@ -492,6 +575,22 @@ final class AppState: ObservableObject {
         return ok
     }
 
+    /// Forgot section passcode: account password + (2FA code or recovery key).
+    func verifyForSectionReset(password: String, code: String?, recoveryKey: String?) async throws {
+        guard await verifyMainPassword(password) else {
+            logScreenEvent(.wrongPassword)
+            throw AppError.wrongPassword
+        }
+        if let code {
+            guard checkCodeNow(code) else { throw lastCodeProblem ?? AppError.wrongCode }
+        } else if let recoveryKey {
+            guard let meta = VaultStorage.loadMeta(space),
+                  await Self.unwrap(PasswordTools.normalizeRecovery(recoveryKey), salt: meta.recoverySalt,
+                                    wrapped: meta.wrappedByRecovery, tag: "rk") != nil else { throw AppError.wrongRecovery }
+        }
+        sectionFails = 0
+    }
+
     func saveProfile() {
         guard let mk = masterKey, let prof = profile else { return }
         try? VaultStorage.save(prof, "profile.enc", space: space, key: mk)
@@ -547,17 +646,54 @@ final class AppState: ObservableObject {
         return key
     }
 
-    /// Sets a new password and a fresh recovery key (shown to the user beforehand), then opens the vault.
-    func finishRecovery(key: SymmetricKey, newPassword: String, newRecovery: String) async throws {
+    /// Forgot password, step 1: email + phone + birth date must match the account.
+    func verifyIdentity(email: String, phone: String, birth: Date) async throws {
+        guard let meta = VaultStorage.loadMeta(.real),
+              let idSalt = meta.identitySalt, let idHash = meta.identityHash else { throw AppError.identityMismatch }
+        let identity = Self.identityString(email: email, phone: phone, birth: birth)
+        let h = await Task.detached { (try? AYNCrypto.pbkdf2(identity, salt: idSalt))?.rawData }.value
+        guard let h, AYNCrypto.constantTimeEqual(h, idHash) else {
+            registerFailure(.wrongPassword)
+            throw AppError.identityMismatch
+        }
+    }
+
+    /// Forgot password, last step (option A): Face ID opens the vault key, the 2FA code proves the second factor.
+    func recoverWithFaceAndCode(_ code: String) async throws -> SymmetricKey {
+        guard SecureEnclaveVault.isEnrolled(.real), Biometrics.isAvailable else { throw AppError.noFaceID }
+        guard let ctx = await Biometrics.authenticate(reason: tr("استرجاع الحساب", "Account recovery")) else { throw AppError.faceFailed }
+        guard let key = try? SecureEnclaveVault.unlock(space: .real, context: ctx),
+              var prof = VaultStorage.load(Profile.self, "profile.enc", space: .real, key: key) else { throw AppError.noFaceID }
+        guard applyTOTP(code, profile: &prof, space: .real, key: key) else {
+            registerFailure(.wrongCode)
+            throw lastCodeProblem ?? AppError.wrongCode
+        }
+        return key
+    }
+
+    /// Forgot password, last step (option B): the 24-character recovery key.
+    func recoverWithKey(_ recoveryKey: String) async throws -> SymmetricKey {
+        guard let meta = VaultStorage.loadMeta(.real),
+              let key = await Self.unwrap(PasswordTools.normalizeRecovery(recoveryKey), salt: meta.recoverySalt,
+                                          wrapped: meta.wrappedByRecovery, tag: "rk") else {
+            registerFailure(.wrongPassword)
+            throw AppError.wrongRecovery
+        }
+        return key
+    }
+
+    /// Sets a new password (and, if given, a fresh recovery key shown to the user beforehand), then opens the vault.
+    func finishRecovery(key: SymmetricKey, newPassword: String, newRecovery: String?) async throws {
         guard var meta = VaultStorage.loadMeta(.real) else { throw AppError.notUnlocked }
-        let norm = PasswordTools.normalizeRecovery(newRecovery)
-        let (pw, rk) = try await Task.detached { () -> ((salt: Data, wrapped: Data), (salt: Data, wrapped: Data)) in
-            (try Self.wrap(key, secret: newPassword, tag: "pw"), try Self.wrap(key, secret: norm, tag: "rk"))
-        }.value
+        let pw = try await Task.detached { try Self.wrap(key, secret: newPassword, tag: "pw") }.value
         meta.salt = pw.salt
         meta.wrappedByPassword = pw.wrapped
-        meta.recoverySalt = rk.salt
-        meta.wrappedByRecovery = rk.wrapped
+        if let newRecovery {
+            let norm = PasswordTools.normalizeRecovery(newRecovery)
+            let rk = try await Task.detached { try Self.wrap(key, secret: norm, tag: "rk") }.value
+            meta.recoverySalt = rk.salt
+            meta.wrappedByRecovery = rk.wrapped
+        }
         try VaultStorage.saveMeta(meta, .real)
         SecureEnclaveVault.remove(.real)
         if biometricsWanted && Biometrics.isAvailable && SecureEnclaveVault.isAvailable {
@@ -803,7 +939,7 @@ final class AppState: ObservableObject {
         }
         openVault(.real, key: mk, profile: payload.profile)
         let p = payload.profile
-        Task { await SupabaseClient.shared.registerAccount(email: p.email, phone: p.phone) }
+        Task { await SupabaseClient.shared.registerAccount(email: p.email, phone: p.phone, username: p.username, birth: p.birthDate) }
         celebration = Celebration(title: tr("أهلاً من جديد \(payload.profile.username)! 🎉", "Welcome back, \(payload.profile.username)! 🎉"),
                                   subtitle: tr("رجعت بياناتك كلها", "All your data is back"))
     }
@@ -850,6 +986,18 @@ final class AppState: ObservableObject {
     }
 
     // MARK: - Erase
+
+    /// Deletes the account for good: cloud copy, Telegram links and everything on this iPhone.
+    func deleteAccount(includeCloud: Bool) async {
+        if includeCloud && space == .real {
+            busy = tr("نحذف نسختك من السحابة…", "Deleting your cloud copy…")
+            await SupabaseClient.shared.deleteCloudData()
+            busy = nil
+        }
+        TelegramService.shared.settings = .init()
+        Keychain.delete(TOTPCarry.account)
+        eraseEverything()
+    }
 
     func eraseEverything() {
         lock(sound: false)

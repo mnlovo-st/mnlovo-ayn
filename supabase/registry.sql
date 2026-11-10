@@ -41,3 +41,8 @@ $$;
 
 revoke all on function public.saver_check_signup(text, text) from public;
 grant execute on function public.saver_check_signup(text, text) to anon, authenticated;
+
+-- Let a user delete their own registry entry (account deletion).
+drop policy if exists "saver_accounts_delete_own" on public.saver_accounts;
+create policy "saver_accounts_delete_own" on public.saver_accounts
+  for delete to authenticated using (user_id = auth.uid());

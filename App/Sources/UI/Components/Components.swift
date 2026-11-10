@@ -243,13 +243,15 @@ struct CodeField: View {
     @Binding var code: String
     var length = 6
     var tint: Color = Theme.accent
+    /// Off for 2FA codes: iOS would otherwise offer SMS codes from Messages, which are never the right one.
+    var autofill = true
     @FocusState private var focused: Bool
 
     var body: some View {
         ZStack {
             TextField("", text: $code)
                 .keyboardType(.numberPad)
-                .textContentType(.oneTimeCode)
+                .textContentType(autofill ? .oneTimeCode : nil)
                 .focused($focused)
                 .foregroundStyle(.clear)
                 .tint(.clear)

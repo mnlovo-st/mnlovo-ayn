@@ -2,18 +2,24 @@ import SwiftUI
 import CryptoKit
 import UniformTypeIdentifiers
 
-/// Forgot password: email + phone + birth date + recovery key (+ email code when Supabase is set up).
+/// Forgot password, in logical order:
+/// 1) email + phone + birth date  2) email code  3) 2FA code + Face ID — or the recovery key  4) new password.
 struct RecoveryView: View {
     @EnvironmentObject var state: AppState
     @Environment(\.dismiss) private var dismiss
 
-    @State private var step = 0
+    enum Step: Int { case identity, email, factor, password, newKey }
+    enum Method { case code, key }
+
+    @State private var step: Step = .identity
     @State private var email = ""
     @State private var phone = ""
     @State private var birth = Calendar.current.date(byAdding: .year, value: -20, to: Date()) ?? Date()
-    @State private var recovery = ""
-    @State private var code = ""
+    @State private var emailCode = ""
     @State private var codeSent = false
+    @State private var method: Method = .code
+    @State private var totp = ""
+    @State private var recovery = ""
     @State private var key: SymmetricKey?
     @State private var newPassword = ""
     @State private var confirm = ""
@@ -21,58 +27,81 @@ struct RecoveryView: View {
     @State private var savedCheck = false
     @State private var loading = false
     @State private var error: String?
+    @State private var mood: EyeMood = .idle
     @FocusState private var focus: AYNFieldID?
 
     private let sb = SupabaseClient.shared
+    private var faceAvailable: Bool { SecureEnclaveVault.isEnrolled(.real) && Biometrics.isAvailable }
+    private var steps: [Step] {
+        var s: [Step] = [.identity]
+        if sb.isConfigured { s.append(.email) }
+        s += [.factor, .password]
+        if method == .key { s.append(.newKey) }
+        return s
+    }
 
     var body: some View {
         ZStack {
             AuroraBackground()
             VStack(spacing: 14) {
-                SheetHeader(title: tr("استرجاع الحساب", "Account recovery")) { dismiss() }
+                SheetHeader(title: tr("نسيت كلمة المرور", "Forgot password")) { dismiss() }
                     .padding(.horizontal, 20).padding(.top, 18)
-                StepProgress(current: step, total: 4).padding(.horizontal, 20)
+                StepProgress(current: steps.firstIndex(of: step) ?? 0, total: steps.count).padding(.horizontal, 20)
                 ScrollView {
                     VStack(spacing: 14) {
+                        EyeView(mood: mood, size: 90, sounds: true)
                         switch step {
-                        case 0: identityStep
-                        case 1: emailStep
-                        case 2: PasswordCreator(password: $newPassword, confirm: $confirm, focus: $focus,
-                                                titleFirst: tr("كلمة السر الجديدة", "New password"))
-                        default: newKeyStep
+                        case .identity: identityStep
+                        case .email: emailStep
+                        case .factor: factorStep
+                        case .password:
+                            PasswordCreator(password: $newPassword, confirm: $confirm, focus: $focus,
+                                            titleFirst: tr("كلمة المرور الجديدة", "New password"))
+                        case .newKey: newKeyStep
+                        }
+                        if let error {
+                            Text(error).font(Theme.font(14, .semibold)).foregroundStyle(Theme.danger)
+                                .multilineTextAlignment(.center)
+                            SupportButton(prominent: true)
                         }
                     }
                     .padding(20)
                 }
                 .scrollDismissesKeyboard(.interactively)
-                if let error {
-                    Text(error).font(Theme.font(14, .semibold)).foregroundStyle(Theme.danger)
-                        .multilineTextAlignment(.center).padding(.horizontal, 20)
-                }
-                PrimaryButton(title: buttonTitle, icon: "arrow.forward", loading: loading, enabled: canContinue) {
+                PrimaryButton(title: buttonTitle, icon: step == .factor && method == .code ? Biometrics.icon : "arrow.forward",
+                              loading: loading, enabled: canContinue) {
                     Task { await next() }
                 }
-                .padding(.horizontal, 20).padding(.bottom, 12)
+                .padding(.horizontal, 20)
+                HStack {
+                    Spacer()
+                    SupportButton()
+                    Spacer()
+                }
+                .padding(.bottom, 10)
             }
         }
-        .interactiveDismissDisabled(step > 0)
+        .interactiveDismissDisabled(step != .identity)
+        .animation(.spring(response: 0.45, dampingFraction: 0.85), value: step)
     }
 
     private var buttonTitle: String {
         switch step {
-        case 0: return tr("تحقق من الهوية", "Verify identity")
-        case 1: return tr("تحقق من الكود", "Verify code")
-        case 2: return tr("التالي", "Next")
-        default: return tr("حفظت المفتاح، افتح الخزنة", "I saved it, open vault")
+        case .identity: return tr("تحقق من الهوية", "Verify identity")
+        case .email: return tr("تحقق من الكود", "Verify code")
+        case .factor: return method == .code ? tr("تحقق بـ \(Biometrics.name) والرمز", "Verify with \(Biometrics.name) + code") : tr("تحقق من المفتاح", "Verify key")
+        case .password: return method == .key ? tr("التالي", "Next") : tr("احفظ وافتح الخزنة", "Save & open vault")
+        case .newKey: return tr("حفظت المفتاح، افتح الخزنة", "I saved it, open vault")
         }
     }
 
     private var canContinue: Bool {
         switch step {
-        case 0: return isValidEmail(email) && phone.count >= 7 && PasswordTools.normalizeRecovery(recovery).count == 24
-        case 1: return code.count >= 6
-        case 2: return PasswordCreator.isAcceptable(newPassword, confirm)
-        default: return savedCheck
+        case .identity: return isValidEmail(email) && PhoneNumber.isValid(phone)
+        case .email: return emailCode.count >= 6
+        case .factor: return method == .code ? totp.count == 6 : PasswordTools.normalizeRecovery(recovery).count == 24
+        case .password: return PasswordCreator.isAcceptable(newPassword, confirm)
+        case .newKey: return savedCheck
         }
     }
 
@@ -80,11 +109,10 @@ struct RecoveryView: View {
         VStack(spacing: 14) {
             StepHeader(icon: "person.badge.key.fill",
                        title: tr("أثبت إنك صاحب الحساب", "Prove it's your account"),
-                       subtitle: tr("لازم كل المعلومات تكون صحيحة. بدونها مستحيل يرجع الحساب.", "Every detail must be correct. Without them the account can't be recovered."))
+                       subtitle: tr("نفس المعلومات اللي سجّلت فيها: الإيميل ورقم الهاتف وتاريخ الميلاد.", "The same details you signed up with: email, phone number and birth date."))
             AYNField(title: tr("الإيميل", "Email"), icon: "envelope.fill", text: $email, keyboard: .emailAddress,
-                     focus: $focus, id: .email) { focus = .phone }
-            AYNField(title: tr("رقم الجوال", "Phone"), icon: "phone.fill", text: $phone, keyboard: .phonePad,
-                     focus: $focus, id: .phone)
+                     contentType: .emailAddress, focus: $focus, id: .email) { focus = .phone }
+            PhoneField(full: $phone, focus: $focus)
             HStack {
                 Image(systemName: "gift.fill").foregroundStyle(Theme.sub).frame(width: 24)
                 Text(tr("تاريخ الميلاد", "Date of birth")).font(Theme.font(17, .medium)).foregroundStyle(Theme.sub)
@@ -93,9 +121,6 @@ struct RecoveryView: View {
             }
             .padding(.horizontal, 16).frame(height: 58)
             .background(RoundedRectangle(cornerRadius: 18).fill(Theme.surface))
-            AYNField(title: tr("مفتاح الاسترجاع (٢٤ حرف)", "Recovery key (24 chars)"), icon: "key.horizontal.fill",
-                     text: $recovery, focus: $focus, id: .recovery)
-                .environment(\.layoutDirection, .leftToRight)
         }
     }
 
@@ -104,7 +129,7 @@ struct RecoveryView: View {
             StepHeader(icon: "envelope.badge.shield.half.filled",
                        title: tr("كود الإيميل", "Email code"),
                        subtitle: tr("أرسلنا كود إلى \(email)", "We sent a code to \(email)"))
-            CodeField(code: $code, length: 8)
+            CodeField(code: $emailCode, length: 8)
             Button { Task { await sendCode() } } label: {
                 Text(tr("إعادة الإرسال", "Resend")).font(Theme.font(14, .semibold)).foregroundStyle(Theme.accent)
             }
@@ -112,11 +137,60 @@ struct RecoveryView: View {
         .task { if !codeSent { await sendCode() } }
     }
 
+    private var factorStep: some View {
+        VStack(spacing: 14) {
+            StepHeader(icon: "lock.rotation",
+                       title: tr("الخطوة الأخيرة", "Last step"),
+                       subtitle: tr("اختر الطريقة اللي عندك:", "Choose what you have:"))
+            methodCard(.code, icon: "lock.rotation", title: tr("رمز التحقق المتغير", "2FA code"),
+                       sub: faceAvailable ? tr("من «كلمات السر» + \(Biometrics.name)", "From Passwords + \(Biometrics.name)")
+                                          : tr("يحتاج \(Biometrics.name) مفعّل على هالجوال", "Needs \(Biometrics.name) on this iPhone"),
+                       enabled: faceAvailable)
+            methodCard(.key, icon: "key.horizontal.fill", title: tr("مفتاح الاسترجاع", "Recovery key"),
+                       sub: tr("الـ ٦ مجموعات اللي حفظتها وقت إنشاء الحساب", "The 6 groups you saved when you created the account"),
+                       enabled: true)
+            if method == .code {
+                CodeField(code: $totp, autofill: false)
+                Text(tr("بعد الرمز بنطلب وجهك عشان نفتح مفتاح الخزنة.", "After the code we'll ask for your face to open the vault key."))
+                    .font(Theme.font(12)).foregroundStyle(Theme.sub).multilineTextAlignment(.center)
+            } else {
+                AYNField(title: "XXXX-XXXX-XXXX-XXXX-XXXX-XXXX", icon: "key.horizontal.fill", text: $recovery, focus: $focus, id: .recovery)
+                    .environment(\.layoutDirection, .leftToRight)
+            }
+        }
+        .onAppear { if !faceAvailable { method = .key } }
+    }
+
+    private func methodCard(_ m: Method, icon: String, title: String, sub: String, enabled: Bool) -> some View {
+        Button {
+            guard enabled else { return }
+            Haptics.selection()
+            withAnimation(.spring) { method = m; error = nil }
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: icon).font(.system(size: 18, weight: .bold)).foregroundStyle(Theme.accent)
+                    .frame(width: 40, height: 40).background(Circle().fill(Theme.accent.opacity(0.14)))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(Theme.font(15, .bold)).foregroundStyle(Theme.text)
+                    Text(sub).font(Theme.font(12)).foregroundStyle(Theme.sub)
+                }
+                Spacer()
+                Image(systemName: method == m ? "largecircle.fill.circle" : "circle")
+                    .foregroundStyle(method == m ? Theme.accent : Theme.faint)
+            }
+            .padding(12)
+            .background(RoundedRectangle(cornerRadius: 16).fill(method == m ? Theme.accent.opacity(0.1) : Theme.surface))
+            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(method == m ? Theme.accent.opacity(0.5) : Theme.stroke))
+            .opacity(enabled ? 1 : 0.45)
+        }
+        .buttonStyle(PressScale())
+    }
+
     private var newKeyStep: some View {
         VStack(spacing: 14) {
             StepHeader(icon: "key.horizontal.fill",
                        title: tr("مفتاح استرجاع جديد", "New recovery key"),
-                       subtitle: tr("المفتاح القديم انلغى. احفظ هذا مكانه.", "Your old key no longer works. Save this one instead."))
+                       subtitle: tr("استخدمت المفتاح القديم، فسوّينا لك واحد جديد. احفظه مكانه.", "You used your old key, so here's a new one. Save it instead."))
             RecoveryKeyCard(key: newRecovery)
             Toggle(isOn: $savedCheck) {
                 Text(tr("كتبته وحفظته بمكان آمن", "I wrote it down somewhere safe")).font(Theme.font(15, .semibold))
@@ -125,57 +199,72 @@ struct RecoveryView: View {
         }
     }
 
-    private func go(_ s: Int) {
+    private func go(_ s: Step) {
         focus = nil
         error = nil
-        withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) { step = s }
+        withAnimation { step = s; mood = .idle }
+    }
+
+    private func failed(_ e: Error) {
+        FX.error()
+        error = e.localizedDescription
+        withAnimation { mood = .angry }
     }
 
     private func sendCode() async {
         do {
             try await sb.sendEmailCode(to: email.trimmingCharacters(in: .whitespaces))
             codeSent = true
-        } catch {
-            self.error = error.localizedDescription
-        }
+        } catch { self.error = error.localizedDescription }
     }
 
     private func next() async {
         loading = true
         defer { loading = false }
         error = nil
+        withAnimation { mood = .thinking }
         switch step {
-        case 0:
+        case .identity:
             do {
-                key = try await state.verifyRecovery(email: email, phone: phone, birth: birth, recoveryKey: recovery)
+                try await state.verifyIdentity(email: email, phone: phone, birth: birth)
                 FX.success()
-                go(sb.isConfigured ? 1 : 2)
-            } catch {
-                FX.error()
-                self.error = error.localizedDescription
-            }
-        case 1:
+                go(sb.isConfigured ? .email : .factor)
+            } catch { failed(error) }
+        case .email:
             do {
-                try await sb.verifyEmailCode(email: email.trimmingCharacters(in: .whitespaces), code: code)
+                _ = try await sb.verifyEmailCode(email: email.trimmingCharacters(in: .whitespaces), code: emailCode)
                 FX.success()
-                go(2)
+                go(.factor)
             } catch {
-                FX.error()
-                self.error = tr("الكود غلط أو انتهى.", "Wrong or expired code.")
+                failed(SupabaseClient.SBError.server(tr("الكود غلط أو انتهى.", "Wrong or expired code.")))
             }
-        case 2:
-            go(3)
-        default:
-            guard let key else { return }
-            state.busy = tr("نحدّث المفاتيح…", "Updating keys…")
+        case .factor:
             do {
-                try await state.finishRecovery(key: key, newPassword: newPassword, newRecovery: newRecovery)
-                state.busy = nil
-                state.show(tr("رجع حسابك ✓", "Account recovered ✓"))
+                key = method == .code ? try await state.recoverWithFaceAndCode(totp) : try await state.recoverWithKey(recovery)
+                FX.success()
+                withAnimation { mood = .happy }
+                go(.password)
             } catch {
-                state.busy = nil
-                self.error = error.localizedDescription
+                totp = ""
+                failed(error)
             }
+        case .password:
+            if method == .key { go(.newKey) } else { await finish(newKey: nil) }
+        case .newKey:
+            await finish(newKey: newRecovery)
+        }
+    }
+
+    private func finish(newKey: String?) async {
+        guard let key else { return }
+        state.busy = tr("نحدّث المفاتيح…", "Updating keys…")
+        do {
+            try await state.finishRecovery(key: key, newPassword: newPassword, newRecovery: newKey)
+            state.busy = nil
+            state.show(tr("رجع حسابك ✓ وتغيّرت كلمة المرور", "Account recovered ✓ Password changed"))
+        } catch {
+            state.busy = nil
+            failed(error)
         }
     }
 }
