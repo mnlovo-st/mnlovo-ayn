@@ -332,6 +332,20 @@ async function handleCallback(cfg: Config, q: Record<string, any>) {
       await answer(t.enabled ? "وقّفنا النشر هنا ⏸️" : "رجع النشر ✓");
       return await sendMenu(cfg, chatId, fromId, msgId);
     }
+    case "tg:alive": {
+      if (!owner) return await answer("بس صاحب الحساب.", true);
+      await answer("الحمدلله ❤️");
+      await legacyAlive(cfg, t.user_id, chatId);
+      return;
+    }
+    case "tg:legacy_off": {
+      if (!owner) return await answer("بس صاحب الحساب.", true);
+      await admin.from("saver_legacy").update({ enabled: false, state: "paused", updated_at: new Date().toISOString() }).eq("user_id", t.user_id);
+      await answer("وقّفنا الخاصية ⏸️");
+      await tg(cfg, "sendMessage", { chat_id: chatId, parse_mode: "HTML",
+        text: `⏸️ <b>وقّفنا «بعد وفاتي»</b>\n\nما بينطرش شي لأحد. تقدر ترجع تشغّلها من التطبيق.${FOOT}` });
+      return;
+    }
     case "tg:share": {
       if (!owner) return await answer("بس صاحب الحساب.", true);
       const code = crypto.randomUUID().replace(/-/g, "").slice(0, 24);
@@ -368,7 +382,7 @@ async function handleCallback(cfg: Config, q: Record<string, any>) {
         text: `🧪 <b>وصلت التجربة</b>
 
 طرشنا رسالة تجريبية لـ ${esc(row.recipient_name || "الأمين")}، وواضح فيها إنها تجربة بس.
-${row.enabled ? (row.bundle ? "الخاصية شغّالة والأمانة محفوظة ✓" : "⚠️ الخاصية شغّالة بس ما حفظت الأمانة بعد — افتح التطبيق واضغط «حدّث الأمانة».") : "⏸️ الخاصية موقّفة حالياً، فما بينرسل شي فعلاً."}${FOOT}`,
+${row.enabled ? (row.bundle ? "الخاصية شغّالة والأمانة محفوظة ✓" : "⚠️ الخاصية شغّالة بس ما حفظت الأمانة بعد — افتح التطبيق واضغط «حدّث الوصية والبيانات».") : "⏸️ الخاصية موقّفة حالياً، فما بينطرش شي فعلاً."}${FOOT}`,
         reply_markup: { inline_keyboard: [[{ text: "↩️ رجوع للتحكم", callback_data: "tg:menu" }]] } });
       return;
     }
