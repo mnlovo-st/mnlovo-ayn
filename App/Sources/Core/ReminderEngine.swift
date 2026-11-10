@@ -10,26 +10,77 @@ import EventKit
 ///   overdue: every 3 hours for 24h until you confirm it's done.
 enum ReminderEngine {
     static let category = "AYN_REMINDER"
+    static let routineCategory = "AYN_ROUTINE"
     static let maxPending = 60
 
     struct Planned: Hashable {
         var date: Date
         var title: String
         var body: String
+        var category = ReminderEngine.category
+        var silent = false
     }
 
     static func registerCategories() {
         let done = UNNotificationAction(identifier: "DONE", title: tr("✅ خلصتها", "✅ Done"), options: [])
         let snooze = UNNotificationAction(identifier: "SNOOZE", title: tr("⏰ ذكّرني بعد ساعة", "⏰ Remind me in 1h"), options: [])
         let cat = UNNotificationCategory(identifier: category, actions: [done, snooze], intentIdentifiers: [], options: [])
-        UNUserNotificationCenter.current().setNotificationCategories([cat])
+        let rDone = UNNotificationAction(identifier: "ROUTINE_DONE", title: tr("✓ سويتها", "✓ Did it"), options: [])
+        let rSnooze = UNNotificationAction(identifier: "ROUTINE_SNOOZE", title: tr("⏰ بعد ١٥ دقيقة", "⏰ In 15 min"), options: [])
+        let rSkip = UNNotificationAction(identifier: "ROUTINE_SKIP", title: tr("⏭️ تخطّي اليوم", "⏭️ Skip today"), options: [])
+        let rcat = UNNotificationCategory(identifier: routineCategory, actions: [rDone, rSnooze, rSkip], intentIdentifiers: [], options: [])
+        UNUserNotificationCenter.current().setNotificationCategories([cat, rcat])
     }
 
     static func requestPermission() async -> Bool {
         (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])) ?? false
     }
 
+    /// Routine notifications for the next days, in the routine's own voice.
+    static func routinePlan(for r: Reminder, now: Date = Date()) -> [Planned] {
+        guard let ro = r.routine, !r.done, !ro.finished else { return [] }
+        let name = (ro.emoji.isEmpty ? "" : ro.emoji + " ") + r.displayTitle
+        var out: [Planned] = []
+        let gentle = [tr("حان وقتها 😊 خطوة صغيرة كل يوم تفرق.", "It's time 😊 small steps every day add up."),
+                      tr("لا تنساها اليوم 🌿", "Don't forget it today 🌿"),
+                      tr("دقيقتين وتخلص، يلا 💫", "Two minutes and it's done 💫")]
+        for (i, at) in ro.occurrences(from: now, span: 10).enumerated() {
+            if ro.isDone(on: at) || ro.isSkipped(on: at) { continue }
+            let streak = ro.streak(now: at)
+            if ro.early > 0 {
+                out.append(Planned(date: at.addingTimeInterval(-Double(ro.early) * 60), title: name,
+                                   body: tr("بعد \(ro.early) دقيقة: \(r.displayTitle)", "In \(ro.early) min: \(r.displayTitle)"),
+                                   category: routineCategory, silent: ro.style == .quiet))
+            }
+            switch ro.style {
+            case .gentle:
+                out.append(Planned(date: at, title: name, body: gentle[i % gentle.count], category: routineCategory))
+                out.append(Planned(date: at.addingTimeInterval(1800), title: name,
+                                   body: tr("سويتها؟ اضغط «سويتها» وأسكت 🤫", "Done it? Tap “Did it” and I'll hush 🤫"), category: routineCategory))
+            case .coach:
+                let hype = streak > 0 ? tr("🔥 سلسلتك \(streak) يوم — لا تكسرها!", "🔥 \(streak)-day streak — don't break it!")
+                                      : tr("💪 يلا نبدأ سلسلة جديدة اليوم!", "💪 Let's start a new streak today!")
+                out.append(Planned(date: at, title: name, body: hype, category: routineCategory))
+                out.append(Planned(date: at.addingTimeInterval(2700), title: name,
+                                   body: tr("باقي فرصة اليوم ⏳ السلسلة تنتظرك.", "Still time today ⏳ your streak is waiting."), category: routineCategory))
+            case .alarm:
+                out.append(Planned(date: at, title: tr("⏰ الحين: ", "⏰ Now: ") + name, body: tr("قوم سوّها الحين!", "Go do it now!"), category: routineCategory))
+                for m in [10, 20, 30] {
+                    out.append(Planned(date: at.addingTimeInterval(Double(m) * 60), title: tr("⏰ للحين ما سويتها: ", "⏰ Still pending: ") + name,
+                                       body: tr("بعد \(m) دقيقة… أكّد عشان أوقف.", "\(m) minutes later… confirm so I stop."), category: routineCategory))
+                }
+            case .quiet:
+                out.append(Planned(date: at, title: name, body: tr("وقتها 🌙", "It's time 🌙"), category: routineCategory, silent: true))
+            }
+        }
+        if let s = r.snoozedUntil, s > now {
+            out.append(Planned(date: s, title: name, body: tr("رجعت أذكّرك 👀", "Reminding you again 👀"), category: routineCategory))
+        }
+        return out.filter { $0.date > now.addingTimeInterval(5) }.sorted { $0.date < $1.date }
+    }
+
     static func plan(for r: Reminder, now: Date = Date()) -> [Planned] {
+        if r.isRoutine { return routinePlan(for: r, now: now) }
         guard !r.done else { return [] }
         let name = r.displayTitle
         var out: [Planned] = []
@@ -93,8 +144,8 @@ enum ReminderEngine {
             let content = UNMutableNotificationContent()
             content.title = p.title
             content.body = p.body
-            content.sound = UNNotificationSound(named: UNNotificationSoundName("notify.wav"))
-            content.categoryIdentifier = category
+            content.sound = p.silent ? nil : UNNotificationSound(named: UNNotificationSoundName("notify.wav"))
+            content.categoryIdentifier = p.category
             content.threadIdentifier = r.id.uuidString
             content.userInfo = ["rid": r.id.uuidString, "space": space.rawValue]
             let comps = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute, .second], from: p.date)
@@ -112,6 +163,21 @@ enum ReminderEngine {
             RemindersStore.update(space, rid) { $0.done = true; $0.doneAt = Date(); $0.snoozedUntil = nil }
         case "SNOOZE":
             RemindersStore.update(space, rid) { $0.snoozedUntil = Date().addingTimeInterval(3600) }
+        case "ROUTINE_DONE":
+            RemindersStore.update(space, rid) { r in
+                let k = Routine.dayKey(Date())
+                if r.routine?.doneDays.contains(k) == false { r.routine?.doneDays.append(k) }
+                r.routine?.doneDays = Array((r.routine?.doneDays ?? []).suffix(400))
+                r.snoozedUntil = nil
+            }
+        case "ROUTINE_SKIP":
+            RemindersStore.update(space, rid) { r in
+                let k = Routine.dayKey(Date())
+                if r.routine?.skipDays.contains(k) == false { r.routine?.skipDays.append(k) }
+                r.snoozedUntil = nil
+            }
+        case "ROUTINE_SNOOZE":
+            RemindersStore.update(space, rid) { $0.snoozedUntil = Date().addingTimeInterval(900) }
         default:
             return
         }
@@ -148,7 +214,12 @@ enum WidgetBridge {
     static func update() {
         let now = Date()
         let list = RemindersStore.load(.real)
-            .filter { !$0.done && $0.due > now.addingTimeInterval(-86400) }
+            .map { r -> Reminder in
+                var c = r
+                if let n = r.routine?.next(after: now) { c.due = n }
+                return c
+            }
+            .filter { !$0.done && $0.due > now.addingTimeInterval(-86400) && !($0.routine?.finished ?? false) }
             .sorted { $0.due < $1.due }
             .prefix(5)
         let items = list.map {
@@ -168,7 +239,7 @@ enum LiveActivityManager {
     static func sync() {
         let now = Date()
         let candidates = RemindersStore.load(.real)
-            .filter { !$0.done && $0.due > now && $0.due.timeIntervalSince(now) < 86400 }
+            .filter { !$0.done && !$0.isRoutine && $0.due > now && $0.due.timeIntervalSince(now) < 86400 }
             .sorted { $0.due < $1.due }
         let target = enabled ? candidates.first : nil
 
@@ -180,7 +251,9 @@ enum LiveActivityManager {
         let attrs = ReminderActivityAttributes(reminderID: t.id.uuidString,
                                                title: t.sensitivity == .secret ? tr("🔒 مهمة سرية", "🔒 Secret task") : t.title,
                                                icon: t.kind.icon,
-                                               isArabic: AppLanguage.current == .ar)
+                                               isArabic: AppLanguage.current == .ar,
+                                               start: min(now, t.due.addingTimeInterval(-86400)),
+                                               kindTitle: t.kind.title)
         let content = ActivityContent(state: ReminderActivityAttributes.ContentState(due: t.due),
                                       staleDate: t.due.addingTimeInterval(3600))
         _ = try? Activity.request(attributes: attrs, content: content, pushType: nil)

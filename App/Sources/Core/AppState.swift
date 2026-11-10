@@ -880,6 +880,24 @@ final class AppState: ObservableObject {
         SoundFX.shared.play(.delete)
     }
 
+    /// Ticks (or unticks) today's routine.
+    func markRoutine(_ r: Reminder, done: Bool, skip: Bool = false) {
+        guard var ro = r.routine else { return }
+        let k = Routine.dayKey(Date())
+        ro.doneDays.removeAll { $0 == k }
+        ro.skipDays.removeAll { $0 == k }
+        if done { ro.doneDays.append(k) }
+        if skip { ro.skipDays.append(k) }
+        ro.doneDays = Array(ro.doneDays.suffix(400))
+        var u = r
+        u.routine = ro
+        u.snoozedUntil = nil
+        u.due = ro.next(after: Date()) ?? r.due
+        if let i = reminders.firstIndex(where: { $0.id == r.id }) { reminders[i] = u }
+        saveReminders()
+        if done { TelegramService.shared.post(.reminderDone(u), space: space) }
+    }
+
     func setDone(_ r: Reminder, _ done: Bool) {
         var u = r
         u.done = done

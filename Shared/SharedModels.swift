@@ -45,5 +45,8 @@ struct ReminderActivityAttributes: ActivityAttributes {
     var title: String
     var icon: String
     var isArabic: Bool
+    /// Start of the countdown window (for the progress bar).
+    var start: Date = Date()
+    var kindTitle: String = ""
 }
 #endif

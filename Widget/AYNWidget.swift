@@ -143,60 +143,148 @@ struct TasksWidgetView: View {
 struct ReminderLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: ReminderActivityAttributes.self) { context in
-            let due = context.state.due
-            HStack(spacing: 12) {
-                Image(systemName: context.attributes.icon)
-                    .font(.system(size: 22, weight: .bold))
-                    .foregroundStyle(LinearGradient(colors: [teal, indigo], startPoint: .top, endPoint: .bottom))
-                    .frame(width: 44, height: 44)
-                    .background(Circle().fill(.white.opacity(0.08)))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(context.attributes.title).font(wf(16, .bold)).foregroundStyle(.white).lineLimit(1)
-                    Text(context.attributes.isArabic ? "آخر يوم — سويتها؟" : "Last day — done yet?")
-                        .font(wf(12, .semibold)).foregroundStyle(.white.opacity(0.6))
-                }
-                Spacer()
-                Text(timerInterval: min(Date(), due)...due, countsDown: true)
-                    .font(wf(20, .heavy))
-                    .monospacedDigit()
-                    .foregroundStyle(teal)
-                    .frame(width: 90)
-                    .multilineTextAlignment(.trailing)
-            }
-            .padding(16)
-            .activityBackgroundTint(night.opacity(0.92))
-            .activitySystemActionForegroundColor(teal)
+            LockScreenActivity(attrs: context.attributes, due: context.state.due)
+                .activityBackgroundTint(night.opacity(0.94))
+                .activitySystemActionForegroundColor(teal)
         } dynamicIsland: { context in
+            let a = context.attributes
             let due = context.state.due
+            let ar = a.isArabic
             return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    Image(systemName: context.attributes.icon).font(.system(size: 22, weight: .bold)).foregroundStyle(teal)
-                        .padding(.leading, 6)
+                    ActivityIcon(icon: a.icon, size: 46)
+                        .padding(.leading, 4)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    Text(timerInterval: min(Date(), due)...due, countsDown: true)
-                        .font(wf(18, .heavy))
-                        .monospacedDigit()
-                        .foregroundStyle(teal)
-                        .frame(width: 80)
+                    VStack(alignment: .trailing, spacing: 0) {
+                        Countdown(due: due, size: 22)
+                            .frame(width: 96, alignment: .trailing)
+                        Text(ar ? "باقي" : "left")
+                            .font(wf(11, .semibold)).foregroundStyle(.white.opacity(0.5))
+                    }
+                    .padding(.trailing, 4)
+                }
+                DynamicIslandExpandedRegion(.center) {
+                    VStack(spacing: 2) {
+                        Text(a.title)
+                            .font(wf(16, .bold)).foregroundStyle(.white)
+                            .lineLimit(1)
+                        Text(a.kindTitle.isEmpty ? (ar ? "آخر يوم" : "Last day") : (ar ? "\(a.kindTitle) · آخر يوم" : "\(a.kindTitle) · last day"))
+                            .font(wf(11, .semibold)).foregroundStyle(teal.opacity(0.85))
+                            .lineLimit(1)
+                    }
+                    .environment(\.layoutDirection, ar ? .rightToLeft : .leftToRight)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    Text(context.attributes.title)
-                        .font(wf(15, .bold))
-                        .lineLimit(1)
+                    VStack(spacing: 6) {
+                        ProgressView(timerInterval: a.start...max(a.start.addingTimeInterval(1), due), countsDown: true) {
+                            EmptyView()
+                        } currentValueLabel: {
+                            EmptyView()
+                        }
+                        .progressViewStyle(.linear)
+                        .tint(LinearGradient(colors: [teal, indigo], startPoint: .leading, endPoint: .trailing))
+                        HStack(spacing: 5) {
+                            Image(systemName: "eye.fill").font(.system(size: 10, weight: .bold)).foregroundStyle(teal)
+                            Text(ar ? "خلصتها؟ افتح التطبيق وأكّد عشان أوقف التذكير" : "Done? Open the app and confirm to stop reminders")
+                                .font(wf(11, .medium)).foregroundStyle(.white.opacity(0.6)).lineLimit(1)
+                        }
+                        .environment(\.layoutDirection, ar ? .rightToLeft : .leftToRight)
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.top, 2)
                 }
             } compactLeading: {
-                Image(systemName: "eye.fill").foregroundStyle(teal)
+                ActivityIcon(icon: "eye.fill", size: 22)
             } compactTrailing: {
-                Text(timerInterval: min(Date(), due)...due, countsDown: true)
-                    .monospacedDigit()
-                    .font(wf(13, .bold))
-                    .foregroundStyle(teal)
-                    .frame(maxWidth: 52)
+                Countdown(due: due, size: 13)
+                    .frame(width: 54, alignment: .trailing)
             } minimal: {
-                Image(systemName: "eye.fill").foregroundStyle(teal)
+                ProgressView(timerInterval: a.start...max(a.start.addingTimeInterval(1), due), countsDown: true) {
+                    EmptyView()
+                } currentValueLabel: {
+                    Image(systemName: "eye.fill").font(.system(size: 9, weight: .bold)).foregroundStyle(teal)
+                }
+                .progressViewStyle(.circular)
+                .tint(teal)
             }
             .keylineTint(teal)
         }
+    }
+}
+
+/// Countdown text that keeps a fixed width (so it never pushes the layout around).
+private struct Countdown: View {
+    var due: Date
+    var size: CGFloat
+    var body: some View {
+        Text(timerInterval: min(Date(), due)...due, countsDown: true, showsHours: true)
+            .font(wf(size, .heavy))
+            .monospacedDigit()
+            .foregroundStyle(teal)
+            .multilineTextAlignment(.trailing)
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
+            .environment(\.layoutDirection, .leftToRight)
+    }
+}
+
+/// The task icon in a soft gradient ring.
+private struct ActivityIcon: View {
+    var icon: String
+    var size: CGFloat
+    var body: some View {
+        ZStack {
+            Circle().fill(LinearGradient(colors: [teal.opacity(0.25), indigo.opacity(0.25)], startPoint: .topLeading, endPoint: .bottomTrailing))
+            Circle().strokeBorder(LinearGradient(colors: [teal, indigo], startPoint: .top, endPoint: .bottom), lineWidth: max(1, size * 0.05))
+            Image(systemName: icon)
+                .font(.system(size: size * 0.45, weight: .bold))
+                .foregroundStyle(LinearGradient(colors: [teal, indigo], startPoint: .top, endPoint: .bottom))
+        }
+        .frame(width: size, height: size)
+    }
+}
+
+private struct LockScreenActivity: View {
+    var attrs: ReminderActivityAttributes
+    var due: Date
+
+    var body: some View {
+        let ar = attrs.isArabic
+        VStack(spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: "eye.fill").font(.system(size: 11, weight: .bold)).foregroundStyle(teal)
+                Text("MNLOVO SAVER").font(wf(11, .heavy)).foregroundStyle(.white.opacity(0.55)).tracking(1)
+                Spacer()
+                Text(ar ? "آخر يوم" : "LAST DAY")
+                    .font(wf(10, .heavy)).foregroundStyle(night)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(Capsule().fill(LinearGradient(colors: [teal, indigo], startPoint: .leading, endPoint: .trailing)))
+            }
+            .environment(\.layoutDirection, .leftToRight)
+            HStack(spacing: 12) {
+                ActivityIcon(icon: attrs.icon, size: 46)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(attrs.title).font(wf(17, .bold)).foregroundStyle(.white).lineLimit(1)
+                    Text(ar ? "سويتها؟ أكّد من التطبيق" : "Done yet? Confirm in the app")
+                        .font(wf(12, .semibold)).foregroundStyle(.white.opacity(0.55)).lineLimit(1)
+                }
+                Spacer(minLength: 6)
+                VStack(alignment: .trailing, spacing: 0) {
+                    Countdown(due: due, size: 24)
+                        .frame(width: 112, alignment: .trailing)
+                    Text(ar ? "باقي" : "left").font(wf(10, .semibold)).foregroundStyle(.white.opacity(0.45))
+                }
+            }
+            .environment(\.layoutDirection, ar ? .rightToLeft : .leftToRight)
+            ProgressView(timerInterval: attrs.start...max(attrs.start.addingTimeInterval(1), due), countsDown: true) {
+                EmptyView()
+            } currentValueLabel: {
+                EmptyView()
+            }
+            .progressViewStyle(.linear)
+            .tint(LinearGradient(colors: [teal, indigo], startPoint: .leading, endPoint: .trailing))
+        }
+        .padding(16)
     }
 }

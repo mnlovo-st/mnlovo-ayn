@@ -90,13 +90,14 @@ struct VaultFile: Codable, Identifiable, Hashable {
 }
 
 enum ReminderKind: String, Codable, CaseIterable, Identifiable {
-    case appointment, task, homework
+    case appointment, task, homework, routine
     var id: String { rawValue }
     var title: String {
         switch self {
         case .appointment: return tr("موعد", "Appointment")
         case .task: return tr("مهمة", "Task")
         case .homework: return tr("واجب", "Homework")
+        case .routine: return tr("روتين", "Routine")
         }
     }
     var icon: String {
@@ -104,6 +105,117 @@ enum ReminderKind: String, Codable, CaseIterable, Identifiable {
         case .appointment: return "calendar.badge.clock"
         case .task: return "checklist"
         case .homework: return "book.closed.fill"
+        case .routine: return "repeat.circle.fill"
+        }
+    }
+}
+
+/// A daily/weekly routine: chosen weekdays at a set time, every week or just this week,
+/// with its own reminder personality and a streak.
+struct Routine: Codable, Hashable {
+    enum Mode: String, Codable, CaseIterable { case weekly, once }
+    enum Style: String, Codable, CaseIterable, Identifiable {
+        case gentle, coach, alarm, quiet
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .gentle: return tr("لطيف", "Gentle")
+            case .coach: return tr("مدرّب", "Coach")
+            case .alarm: return tr("منبّه", "Alarm")
+            case .quiet: return tr("هادي", "Quiet")
+            }
+        }
+        var icon: String {
+            switch self {
+            case .gentle: return "leaf.fill"
+            case .coach: return "flame.fill"
+            case .alarm: return "alarm.waves.left.and.right.fill"
+            case .quiet: return "moon.zzz.fill"
+            }
+        }
+        var blurb: String {
+            switch self {
+            case .gentle: return tr("رسالة ناعمة بوقتها، وتذكير خفيف بعد نص ساعة إذا ما سويتها.", "A soft nudge on time, and a light follow-up 30 min later if needed.")
+            case .coach: return tr("يحمّسك ويعدّ سلسلة الأيام 🔥 ما يخليك تكسرها.", "Hypes you up and counts your streak 🔥 so you don't break it.")
+            case .alarm: return tr("يلحّ عليك: الحين، وبعد ١٠ و٢٠ و٣٠ دقيقة لين تأكّد.", "Insists: now, then at 10, 20 and 30 minutes until you confirm.")
+            case .quiet: return tr("بدون صوت، بس إشعار هادي على الشاشة.", "No sound, just a quiet banner.")
+            }
+        }
+    }
+
+    var mode: Mode = .weekly
+    var days: [Int] = [1, 2, 3, 4, 5, 6, 7]     // Calendar weekdays (1 = Sunday)
+    var hour = 8
+    var minute = 0
+    var style: Style = .gentle
+    var early = 0                               // heads-up minutes before (0 = none)
+    var emoji = "💧"
+    var doneDays: [String] = []                 // yyyy-MM-dd
+    var skipDays: [String] = []
+    var startedAt = Date()
+
+    static func dayKey(_ d: Date) -> String {
+        let c = Calendar.current.dateComponents([.year, .month, .day], from: d)
+        return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
+    }
+
+    var timeText: String {
+        var c = DateComponents(); c.hour = hour; c.minute = minute
+        let d = Calendar.current.date(from: c) ?? Date()
+        let f = DateFormatter(); f.locale = AppLanguage.current.locale; f.timeStyle = .short
+        return f.string(from: d)
+    }
+
+    /// Times this routine fires, from `from` for `span` days (once-mode stops a week after it started).
+    func occurrences(from: Date, span: Int = 10) -> [Date] {
+        let cal = Calendar.current
+        let start = cal.startOfDay(for: from)
+        let end = mode == .once ? startedAt.addingTimeInterval(7 * 86400) : .distantFuture
+        var out: [Date] = []
+        for i in 0..<span {
+            guard let day = cal.date(byAdding: .day, value: i, to: start) else { continue }
+            guard days.contains(cal.component(.weekday, from: day)),
+                  let at = cal.date(bySettingHour: hour, minute: minute, second: 0, of: day) else { continue }
+            if at > from && at <= end { out.append(at) }
+        }
+        return out
+    }
+
+    func next(after d: Date = Date()) -> Date? { occurrences(from: d, span: 15).first }
+
+    var scheduledToday: Bool { days.contains(Calendar.current.component(.weekday, from: Date())) }
+    func isDone(on d: Date) -> Bool { doneDays.contains(Self.dayKey(d)) }
+    func isSkipped(on d: Date) -> Bool { skipDays.contains(Self.dayKey(d)) }
+    var finished: Bool { mode == .once && Date() > startedAt.addingTimeInterval(7 * 86400) }
+
+    /// Consecutive scheduled days completed, counting back from today (or yesterday if today is still open).
+    func streak(now: Date = Date()) -> Int {
+        let cal = Calendar.current
+        var count = 0
+        var day = cal.startOfDay(for: now)
+        if days.contains(cal.component(.weekday, from: day)) && !isDone(on: day) {
+            day = cal.date(byAdding: .day, value: -1, to: day) ?? day
+        }
+        for _ in 0..<400 {
+            if days.contains(cal.component(.weekday, from: day)) {
+                if isDone(on: day) { count += 1 }
+                else if !isSkipped(on: day) { break }
+            }
+            guard let prev = cal.date(byAdding: .day, value: -1, to: day), prev >= cal.startOfDay(for: startedAt) else { break }
+            day = prev
+        }
+        return count
+    }
+
+    /// Short weekday names in display order (week starts per the user's calendar).
+    static var orderedDays: [(Int, String)] {
+        let cal = Calendar.current
+        let ar = ["", "أحد", "إثنين", "ثلاثاء", "أربعاء", "خميس", "جمعة", "سبت"]
+        let en = ["", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+        let first = cal.firstWeekday
+        return (0..<7).map { i in
+            let d = (first - 1 + i) % 7 + 1
+            return (d, tr(ar[d], en[d]))
         }
     }
 }
@@ -121,6 +233,9 @@ struct Reminder: Codable, Identifiable, Hashable {
     var snoozedUntil: Date?
     var calendarEventID: String?
     var created = Date()
+    var routine: Routine?
+
+    var isRoutine: Bool { kind == .routine && routine != nil }
 
     var displayTitle: String {
         sensitivity == .secret ? tr("🔒 تذكير سري", "🔒 Secret reminder") : title

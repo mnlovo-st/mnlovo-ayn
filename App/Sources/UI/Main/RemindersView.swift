@@ -9,19 +9,31 @@ struct RemindersView: View {
     @State private var revealed: Set<UUID> = []
     @State private var secretAction: SecretAction?
     @State private var celebrate = false
+    @AppStorage("intro.reminders.seen") private var introSeen = false
+    @State private var showIntro = false
 
     private var now: Date { Date() }
 
-    private var upcoming: [Reminder] { state.reminders.filter { !$0.done && $0.due >= now }.sorted { $0.due < $1.due } }
-    private var overdue: [Reminder] { state.reminders.filter { !$0.done && $0.due < now }.sorted { $0.due < $1.due } }
-    private var finished: [Reminder] { state.reminders.filter { $0.done }.sorted { ($0.doneAt ?? $0.due) > ($1.doneAt ?? $1.due) } }
+    private var oneOff: [Reminder] { state.reminders.filter { !$0.isRoutine } }
+    private var routines: [Reminder] { state.reminders.filter { $0.isRoutine && !($0.routine?.finished ?? false) } }
+    private var upcoming: [Reminder] { oneOff.filter { !$0.done && $0.due >= now }.sorted { $0.due < $1.due } }
+    private var overdue: [Reminder] { oneOff.filter { !$0.done && $0.due < now }.sorted { $0.due < $1.due } }
+    private var finished: [Reminder] { oneOff.filter { $0.done }.sorted { ($0.doneAt ?? $0.due) > ($1.doneAt ?? $1.due) } }
+
+    private func newRoutine() -> Reminder {
+        var r = Reminder(title: "", due: Date())
+        r.kind = .routine
+        r.routine = Routine()
+        r.due = r.routine?.next() ?? Date()
+        return r
+    }
 
     private var list: [Reminder] { [upcoming, overdue, finished][segment] }
 
     private var weekProgress: (done: Int, total: Int) {
         let start = Calendar.current.date(byAdding: .day, value: -7, to: now) ?? now
         let end = Calendar.current.date(byAdding: .day, value: 7, to: now) ?? now
-        let inRange = state.reminders.filter { $0.due >= start && $0.due <= end }
+        let inRange = oneOff.filter { $0.due >= start && $0.due <= end }
         return (inRange.filter { $0.done }.count, inRange.count)
     }
 
@@ -30,13 +42,28 @@ struct RemindersView: View {
             VStack(spacing: 14) {
                 TabHeader(title: MainTab.reminders.title,
                           subtitle: todaySummary) {
-                    CircleIconButton(icon: "plus", size: 42, tint: Theme.bg) {
-                        editing = Reminder(title: "", due: Calendar.current.date(byAdding: .day, value: 3, to: Date()) ?? Date())
+                    Menu {
+                        Button {
+                            editing = Reminder(title: "", due: Calendar.current.date(byAdding: .day, value: 3, to: Date()) ?? Date())
+                        } label: { Label(tr("تذكير (موعد، مهمة، واجب)", "Reminder (appointment, task, homework)"), systemImage: "bell.badge.fill") }
+                        Button { editing = newRoutine() } label: {
+                            Label(tr("روتين يومي / أسبوعي", "Daily / weekly routine"), systemImage: "repeat.circle.fill")
+                        }
+                        Button { showIntro = true } label: { Label(tr("كيف تشتغل التذكيرات؟", "How do reminders work?"), systemImage: "play.circle") }
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundStyle(Theme.bg)
+                            .frame(width: 42, height: 42)
+                            .background(Circle().fill(Theme.gradient))
                     }
-                    .background(Circle().fill(Theme.gradient))
                 }
 
                 summaryCard
+
+                if !routines.isEmpty {
+                    RoutineStrip(routines: routines, onEdit: { editing = $0 }, onAdd: { editing = newRoutine() })
+                }
 
                 Picker("", selection: $segment) {
                     Text(tr("القادمة (\(upcoming.count))", "Upcoming (\(upcoming.count))")).tag(0)
@@ -77,7 +104,13 @@ struct RemindersView: View {
             }
             Button(tr("لا بعدني", "Not yet"), role: .cancel) { confirming = nil }
         }
-        .onAppear { state.reminders = RemindersStore.load(state.space) }
+        .onAppear {
+            state.reminders = RemindersStore.load(state.space)
+            if !introSeen { DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { showIntro = true } }
+        }
+        .fullScreenCover(isPresented: $showIntro) {
+            RemindersIntro { introSeen = true; showIntro = false }
+        }
     }
 
     private var todaySummary: String {
@@ -233,12 +266,15 @@ struct ReminderEditor: View {
                     HStack(spacing: 8) {
                         ForEach(ReminderKind.allCases) { k in
                             Button {
-                                withAnimation(.spring(response: 0.3)) { reminder.kind = k }
+                                withAnimation(.spring(response: 0.3)) {
+                                    reminder.kind = k
+                                    if k == .routine && reminder.routine == nil { reminder.routine = Routine() }
+                                }
                                 FX.toggle()
                             } label: {
                                 VStack(spacing: 6) {
                                     Image(systemName: k.icon).font(.system(size: 20, weight: .semibold))
-                                    Text(k.title).font(Theme.font(13, .bold))
+                                    Text(k.title).font(Theme.font(12, .bold)).lineLimit(1).minimumScaleFactor(0.7)
                                 }
                                 .foregroundStyle(reminder.kind == k ? Theme.bg : Theme.sub)
                                 .frame(maxWidth: .infinity).frame(height: 70)
@@ -249,27 +285,34 @@ struct ReminderEditor: View {
                         }
                     }
 
-                    AYNField(title: tr("العنوان (مثلاً: واجب قواعد البيانات)", "Title (e.g. Database homework)"), icon: "pencil",
-                             text: $reminder.title, focus: $focus, id: .title)
+                    AYNField(title: reminder.kind == .routine ? tr("الاسم (مثلاً: اشرب ماي، دواء، ورد)", "Name (e.g. drink water, meds, reading)")
+                                                              : tr("العنوان (مثلاً: واجب قواعد البيانات)", "Title (e.g. Database homework)"),
+                             icon: "pencil", text: $reminder.title, focus: $focus, id: .title)
 
-                    VStack(alignment: .leading, spacing: 8) {
-                        SectionTitle(text: tr("موعد التسليم", "Due"), icon: "calendar")
-                        DatePicker("", selection: $reminder.due, displayedComponents: [.date, .hourAndMinute])
-                            .datePickerStyle(.graphical)
-                            .tint(Theme.accent)
-                    }
-                    .glass(12)
-
-                    VStack(alignment: .leading, spacing: 10) {
-                        SectionTitle(text: tr("في آخر يوم ذكّرني كل", "On the last day, remind me every"), icon: "repeat")
-                        Picker("", selection: $reminder.nagHours) {
-                            ForEach([1, 2, 3, 4], id: \.self) { h in Text(tr("\(h) ساعة", "\(h)h")).tag(h) }
+                    if reminder.kind == .routine {
+                        RoutineEditorSection(routine: Binding(get: { reminder.routine ?? Routine() },
+                                                              set: { reminder.routine = $0 }))
+                            .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    } else {
+                        VStack(alignment: .leading, spacing: 8) {
+                            SectionTitle(text: tr("موعد التسليم", "Due"), icon: "calendar")
+                            DatePicker("", selection: $reminder.due, displayedComponents: [.date, .hourAndMinute])
+                                .datePickerStyle(.graphical)
+                                .tint(Theme.accent)
                         }
-                        .pickerStyle(.segmented)
-                    }
-                    .glass(14)
+                        .glass(12)
 
-                    schedulePreview
+                        VStack(alignment: .leading, spacing: 10) {
+                            SectionTitle(text: tr("في آخر يوم ذكّرني كل", "On the last day, remind me every"), icon: "repeat")
+                            Picker("", selection: $reminder.nagHours) {
+                                ForEach([1, 2, 3, 4], id: \.self) { h in Text(tr("\(h) ساعة", "\(h)h")).tag(h) }
+                            }
+                            .pickerStyle(.segmented)
+                        }
+                        .glass(14)
+
+                        schedulePreview
+                    }
 
                     VStack(alignment: .leading, spacing: 8) {
                         SectionTitle(text: tr("ملاحظات", "Notes"), icon: "note.text")
@@ -285,7 +328,7 @@ struct ReminderEditor: View {
                         SensitivityPicker(level: $reminder.sensitivity)
                     }
 
-                    if isNew {
+                    if isNew && reminder.kind != .routine {
                         Toggle(isOn: $addToCalendar) {
                             Label(tr("أضف للتقويم كمان", "Also add to Calendar"), systemImage: "calendar.badge.plus")
                                 .font(Theme.font(15, .semibold))
@@ -294,7 +337,8 @@ struct ReminderEditor: View {
                     }
 
                     PrimaryButton(title: tr("حفظ", "Save"), icon: "bell.badge.fill",
-                                  enabled: !reminder.title.trimmingCharacters(in: .whitespaces).isEmpty) { Task { await save() } }
+                                  enabled: !reminder.title.trimmingCharacters(in: .whitespaces).isEmpty
+                                    && (reminder.kind != .routine || !(reminder.routine?.days.isEmpty ?? true))) { Task { await save() } }
                 }
                 .padding(20)
             }
@@ -323,6 +367,13 @@ struct ReminderEditor: View {
 
     private func save() async {
         reminder.title = reminder.title.trimmingCharacters(in: .whitespaces)
+        if reminder.kind == .routine {
+            if reminder.routine == nil { reminder.routine = Routine() }
+            if isNew { reminder.routine?.startedAt = Date() }
+            reminder.due = reminder.routine?.next() ?? reminder.due
+        } else {
+            reminder.routine = nil
+        }
         var r = reminder
         if isNew && addToCalendar, let id = await ReminderEngine.addToCalendar(r) { r.calendarEventID = id }
         state.upsert(r)
