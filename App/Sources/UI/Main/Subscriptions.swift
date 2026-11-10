@@ -71,14 +71,14 @@ struct SubscriptionEditorSection: View {
                 HStack {
                     Text(tr("يكلّفك بالشهر", "Costs you monthly")).font(Theme.font(13, .semibold)).foregroundStyle(Theme.sub)
                     Spacer()
-                    Text(Subscription.money(sub.monthlyCost, sub.currency))
-                        .font(Theme.mono(16, .bold)).foregroundStyle(Theme.accent)
+                    MoneyText(value: sub.monthlyCost, code: sub.currency, size: 16)
+                        .foregroundStyle(Theme.accent)
                 }
                 HStack {
                     Text(tr("وبالسنة", "And yearly")).font(Theme.font(13, .semibold)).foregroundStyle(Theme.sub)
                     Spacer()
-                    Text(Subscription.money(sub.monthlyCost * 12, sub.currency))
-                        .font(Theme.mono(15, .bold)).foregroundStyle(Theme.sub)
+                    MoneyText(value: sub.monthlyCost * 12, code: sub.currency, size: 15)
+                        .foregroundStyle(Theme.sub)
                 }
             }
         }
@@ -88,10 +88,8 @@ struct SubscriptionEditorSection: View {
 }
 
 extension Subscription {
-    static func money(_ v: Double, _ currency: String) -> String {
-        let n = v.rounded() == v ? String(Int(v)) : String(format: "%.1f", v)
-        return "\(n) \(currency)"
-    }
+    /// Text-only version, for notifications and widgets. On screen, use `MoneyText`.
+    static func money(_ v: Double, _ currency: String) -> String { Money.text(v, currency) }
 }
 
 /// Summary strip at the top of the Reminders tab: what your subscriptions cost and what renews next.
@@ -126,10 +124,13 @@ struct SubscriptionsSummary: View {
                     ForEach(byCurrency.prefix(2), id: \.0) { pair in
                         VStack(alignment: .leading, spacing: 2) {
                             Text(tr("بالشهر", "Monthly")).font(Theme.font(11)).foregroundStyle(Theme.sub)
-                            Text(Subscription.money(pair.1, pair.0))
-                                .font(Theme.mono(18, .bold)).foregroundStyle(Theme.accent)
-                            Text(tr("بالسنة \(Subscription.money(pair.1 * 12, pair.0))", "Yearly \(Subscription.money(pair.1 * 12, pair.0))"))
-                                .font(Theme.font(10)).foregroundStyle(Theme.faint)
+                            MoneyText(value: pair.1, code: pair.0, size: 18)
+                                .foregroundStyle(Theme.accent)
+                            HStack(spacing: 4) {
+                                Text(tr("بالسنة", "Yearly")).font(Theme.font(10)).foregroundStyle(Theme.faint)
+                                MoneyText(value: pair.1 * 12, code: pair.0, size: 10, weight: .semibold)
+                                    .foregroundStyle(Theme.faint)
+                            }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(10)

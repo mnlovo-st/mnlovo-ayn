@@ -154,9 +154,10 @@ struct Subscription: Codable, Hashable {
     var planToCancel = false
 
     var monthlyCost: Double { price * cycle.perMonth }
+    /// For text-only places (notifications, widgets): the amount with the currency's sign.
     var priceText: String {
         let n = price.truncatingRemainder(dividingBy: 1) == 0 ? String(Int(price)) : String(format: "%.2f", price)
-        return "\(n) \(currency)"
+        return "\(n) \(Money.sign(currency))"
     }
 }
 
