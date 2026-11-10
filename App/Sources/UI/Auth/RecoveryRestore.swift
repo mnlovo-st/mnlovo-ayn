@@ -129,10 +129,10 @@ struct RecoveryView: View {
         VStack(spacing: 14) {
             StepHeader(icon: "envelope.badge.shield.half.filled",
                        title: tr("كود الإيميل", "Email code"),
-                       subtitle: tr("أرسلنا كود إلى \(email)", "We sent a code to \(email)"))
+                       subtitle: tr("طرشنا كود إلى \(email)", "We sent a code to \(email)"))
             CodeField(code: $emailCode, length: 8, mail: true)
             Button { Task { await sendCode() } } label: {
-                Text(tr("إعادة الإرسال", "Resend")).font(Theme.font(14, .semibold)).foregroundStyle(Theme.accent)
+                Text(tr("طرشه مرة ثانية", "Resend")).font(Theme.font(14, .semibold)).foregroundStyle(Theme.accent)
             }
         }
         .task { if !codeSent { await sendCode() } }
@@ -336,7 +336,7 @@ struct RestoreView: View {
                 } else if !codeSent {
                     AYNField(title: tr("إيميل الحساب", "Account email"), icon: "envelope.fill", text: $email,
                              keyboard: .emailAddress, focus: $focus, id: .email)
-                    PrimaryButton(title: tr("أرسل الكود", "Send code"), icon: "paperplane.fill", loading: loading,
+                    PrimaryButton(title: tr("طرش الكود", "Send code"), icon: "paperplane.fill", loading: loading,
                                   enabled: isValidEmail(email)) { Task { await send() } }
                 } else {
                     Text(tr("اكتب الكود اللي وصلك:", "Enter the code you received:")).font(Theme.font(15, .semibold))

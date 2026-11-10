@@ -137,7 +137,7 @@ enum ReminderEngine {
         for days in Set([warn, 1]).sorted(by: >) {
             let when = r.due.addingTimeInterval(-Double(days) * 86400)
             let body = sub.planToCancel
-                ? tr("باقي \(days) يوم على التجديد — كنت تبي تلغيه. الحين وقته ✂️", "\(days) day(s) to renewal — you wanted to cancel. Now's the time ✂️")
+                ? tr("باقي \(days) يوم على التجديد — كنت تبا تلغيه. الحين وقته ✂️", "\(days) day(s) to renewal — you wanted to cancel. Now's the time ✂️")
                 : tr("\(name) بيتجدد بعد \(days) يوم بـ \(sub.priceText).", "\(name) renews in \(days) day(s) for \(sub.priceText).")
             out.append(Planned(date: when, title: name, body: body))
         }

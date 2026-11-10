@@ -114,9 +114,8 @@ struct RootView: View {
 /// What the app switcher shows: a shut eye and nothing else — never your data.
 ///
 /// The first version was a glowing app icon in the middle of coloured blobs, which read as a
-/// splash screen rather than a shut door. This one is deliberately quiet: a dark field, a hairline
-/// seam where the lid has closed, the eye shut over it, and the wordmark small underneath. It looks
-/// like something that has been put away on purpose.
+/// splash screen rather than a shut door. This one is deliberately quiet: a dark field, the eye
+/// shut, and the wordmark small underneath. It looks like something put away on purpose.
 struct PrivacyCover: View {
     var recording: Bool
 
@@ -147,18 +146,12 @@ struct PrivacyCover: View {
             VStack(spacing: 0) {
                 Spacer()
 
-                // 3. the shut eye, sitting on the seam
-                ZStack {
-                    // the seam itself, fading out to both edges
-                    LinearGradient(colors: [.clear, accentLine.opacity(0.55), .clear], startPoint: .leading, endPoint: .trailing)
-                        .frame(height: 1)
-                        .shadow(color: accentLine.opacity(0.5), radius: 8)
-                    ClosedEye()
-                        .stroke(Theme.text.opacity(0.9), style: StrokeStyle(lineWidth: 2.6, lineCap: .round, lineJoin: .round))
-                        .frame(width: 128, height: 54)
-                        .shadow(color: accentLine.opacity(0.35), radius: 14)
-                }
-                .frame(height: 70)
+                // 3. the shut eye
+                ClosedEye()
+                    .stroke(Theme.text.opacity(0.9), style: StrokeStyle(lineWidth: 2.6, lineCap: .round, lineJoin: .round))
+                    .frame(width: 128, height: 54)
+                    .shadow(color: accentLine.opacity(0.35), radius: 14)
+                    .frame(height: 70)
 
                 // 4. the wordmark, quiet
                 Text(Brand.appName)

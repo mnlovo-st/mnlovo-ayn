@@ -10,7 +10,7 @@ struct TelegramExplainer: View {
     private var caption: String {
         switch phase {
         case 0: return tr("تضيف حساب أو تذكير أو ملاحظة…", "You add an account, reminder or note…")
-        case 1: return tr("التطبيق يرسله لحاله…", "The app sends it on its own…")
+        case 1: return tr("التطبيق يرسله بنفسه…", "The app sends it on its own…")
         default: return tr("ويوصل لتيليجرام مرتّب ومنسّق ✓", "and it lands in Telegram, neatly formatted ✓")
         }
     }
@@ -141,19 +141,19 @@ struct TelegramGuide: View {
     private struct Step { let title: String; let detail: String }
     private var steps: [Step] {
         [Step(title: tr("١. اضغط «ربط تيليجرام»", "1. Tap “Link Telegram”"),
-              detail: tr("من هالصفحة تحت. التطبيق يجهّز لك رابط خاص فيك أنت بس، ويفتح تيليجرام لحاله.",
+              detail: tr("من هالصفحة تحت. التطبيق يجهّز لك رابط خاص فيك أنت بس، ويفتح تيليجرام بنفسه.",
                          "Right here below. The app prepares a private link just for you and opens Telegram by itself.")),
          Step(title: tr("٢. اضغط «ابدأ» (Start)", "2. Tap “Start”"),
               detail: tr("تيليجرام بيفتح على بوتنا الرسمي MNLOVO SAVER ‏(@mnlovo_sbot). اضغط الزر الأزرق اللي تحت الشاشة.",
                          "Telegram opens our official MNLOVO SAVER bot (@mnlovo_sbot). Tap the blue button at the bottom.")),
          Step(title: tr("٣. خلاص! ارجع للتطبيق", "3. Done! Come back to the app"),
-              detail: tr("البوت يرد عليك «تم الربط ✓»، والتطبيق يكتشف الربط لحاله. لا تنسخ ولا تلصق ولا تكتب أي شي.",
+              detail: tr("البوت يرد عليك «تم الربط ✓»، والتطبيق يكتشف الربط بنفسه. لا تنسخ ولا تلصق ولا تكتب أي شي.",
                          "The bot replies “Linked ✓” and the app detects it on its own. Nothing to copy, paste or type.")),
-         Step(title: tr("٤. تبيه في قروب أو قناة؟ (اختياري)", "4. Want it in a group or channel? (optional)"),
+         Step(title: tr("٤. تباه في قروب أو قناة؟ (اختياري)", "4. Want it in a group or channel? (optional)"),
               detail: tr("بعد الربط اضغط «أضف قروب» أو «أضف قناة». تيليجرام يعرض لك قائمتك، اختر وحدة واضغط «إضافة». البوت ياخذ صلاحية النشر بس.",
                          "After linking, tap “Add group” or “Add channel”. Telegram shows your list; pick one and tap “Add”. The bot only gets permission to post.")),
          Step(title: tr("٥. وكل شي يوصل مرتّب", "5. Everything arrives neatly"),
-              detail: tr("أي حساب أو تذكير أو ملاحظة تضيفها تنرسل تلقائياً بشكل منسّق مع التاريخ. 🔴 السري جداً ما ينرسل أبداً.",
+              detail: tr("أي حساب أو تذكير أو ملاحظة تضيفها تنطرش تلقائياً بشكل منسّق مع التاريخ. السري جداً ما ينطرش أبداً 🔴.",
                          "Every account, reminder or note you add is posted automatically, formatted and dated. 🔴 Top-secret items are never sent."))]
     }
 
@@ -413,7 +413,7 @@ struct TelegramSetupView: View {
     var body: some View {
         SheetScaffold(title: tr("تيليجرام", "Telegram")) {
             if state.isDecoy {
-                Label(tr("هالخاصية مو متاحة هنا.", "This feature isn't available here."), systemImage: "nosign")
+                Label(tr("هالخاصية مب متاحة هنا.", "This feature isn't available here."), systemImage: "nosign")
                     .font(Theme.font(15, .semibold)).foregroundStyle(Theme.sub).glass(16)
             } else {
                 header
@@ -457,7 +457,7 @@ struct TelegramSetupView: View {
             Button(tr("إلغاء ربط \(t.title)", "Unlink \(t.title)"), role: .destructive) { Task { await remove(t) } }
         } message: { t in
             Text(t.type == "private" ? tr("ما بيوصلك شي في المحادثة الخاصة.", "Nothing more will be sent to your private chat.")
-                                     : tr("البوت بيطلع من \(t.title) لحاله.", "The bot will leave \(t.title) by itself."))
+                                     : tr("البوت بيطلع من \(t.title) بنفسه.", "The bot will leave \(t.title) by itself."))
         }
     }
 
@@ -561,9 +561,9 @@ struct TelegramSetupView: View {
                                                        "Group: tap “Add group” → Telegram lists your groups → pick one → “Add”. The group gets a “Linked ✓” message."))
                         guideLine("megaphone.fill", tr("قناة: اضغط «أضف قناة» ← اختر قناتك ← «إضافة كمشرف» (صلاحية النشر بس) ← «حفظ».",
                                                         "Channel: tap “Add channel” → pick your channel → “Add as admin” (post only) → “Save”."))
-                        guideLine("person.2.fill", tr("شخص: اضغط «أضف شخص» ← أرسل له الرابط ← يفتحه ويضغط «ابدأ». الرابط لمرة وحدة ولمدة ٣٠ دقيقة.",
+                        guideLine("person.2.fill", tr("شخص: اضغط «أضف شخص» ← طرش له الرابط ← يفتحه ويضغط «ابدأ». الرابط لمرة وحدة ولمدة ٣٠ دقيقة.",
                                                        "Person: tap “Add person” → send them the link → they open it and tap “Start”. One-time link, valid 30 minutes."))
-                        guideLine("person.badge.minus", tr("تبي توقفه؟ اضغط ✕ جنب أي وحدة، والبوت يطلع لحاله.", "Want to stop? Tap ✕ next to any of them and the bot leaves by itself."))
+                        guideLine("person.badge.minus", tr("تبا توقفه؟ اضغط ✕ صوب أي وحدة، والبوت يطلع بنفسه.", "Want to stop? Tap ✕ next to any of them and the bot leaves by itself."))
                     }
                     .padding(.top, 6)
                 } label: {
@@ -576,15 +576,15 @@ struct TelegramSetupView: View {
 
             // what gets sent
             VStack(alignment: .leading, spacing: 0) {
-                Text(tr("وش يوصل", "What gets sent")).font(Theme.font(16, .heavy)).foregroundStyle(Theme.text).padding(.bottom, 6)
+                Text(tr("شو يوصل", "What gets sent")).font(Theme.font(16, .heavy)).foregroundStyle(Theme.text).padding(.bottom, 6)
                 option("key.horizontal.fill", tr("الحسابات", "Accounts"), $settings.accounts)
                 option("eye.slash.fill", tr("كلمات السر (مخفية تحت غطاء)", "Passwords (hidden under a spoiler)"), $settings.passwords)
                 option("bell.fill", tr("التذكيرات", "Reminders"), $settings.reminders)
                 option("note.text", tr("الملاحظات", "Notes"), $settings.notes)
                 option("paperclip", tr("الملفات (الاسم والحجم بس)", "Files (name & size only)"), $settings.files)
                 option("pencil", tr("التعديلات بعد", "Edits too"), $settings.updates)
-                option("shield.lefthalf.filled", tr("العناصر 🟡 الحساسة", "🟡 Sensitive items"), $settings.includeSensitive)
-                option("exclamationmark.octagon.fill", tr("حتى العناصر 🔴 السرية جداً", "Even 🔴 top-secret items"), $settings.includeSecret)
+                option("shield.lefthalf.filled", tr("العناصر الحساسة 🟡", "🟡 Sensitive items"), $settings.includeSensitive)
+                option("exclamationmark.octagon.fill", tr("حتى العناصر السرية جداً 🔴", "Even 🔴 top-secret items"), $settings.includeSecret)
                 option("eye.trianglebadge.exclamationmark", tr("الرسالة كلها مشوّشة (تنكشف باللمس)", "Whole message blurred (tap to reveal)"), $settings.spoiler)
             }
             .glass(14)
@@ -592,14 +592,14 @@ struct TelegramSetupView: View {
             // behaviour
             VStack(alignment: .leading, spacing: 0) {
                 Text(tr("السلوك", "Behaviour")).font(Theme.font(16, .heavy)).foregroundStyle(Theme.text).padding(.bottom, 6)
-                option("hand.raised.fill", tr("اسألني قبل إرسال كل حساب (مع خيار تشفيره)", "Ask before sending each account (with a cipher option)"), $settings.askEachTime)
-                option("camera.badge.ellipsis", tr("أرسل صورة المتطفل فوراً", "Send intruder photos instantly"), $settings.intruderAlerts)
+                option("hand.raised.fill", tr("اسألني قبل ما أطرش كل حساب (مع خيار تشفيره)", "Ask before sending each account (with a cipher option)"), $settings.askEachTime)
+                option("camera.badge.ellipsis", tr("طرش صورة المتطفل فوراً", "Send intruder photos instantly"), $settings.intruderAlerts)
             }
             .glass(14)
 
             if let error { Text(error).font(Theme.font(13, .semibold)).foregroundStyle(Theme.danger) }
 
-            SecondaryButton(title: tr("أرسل رسالة تجريبية", "Send a test message"), icon: "paperplane", color: blue) { Task { await test() } }
+            SecondaryButton(title: tr("طرش رسالة تجريبية", "Send a test message"), icon: "paperplane", color: blue) { Task { await test() } }
         }
         .onChange(of: settings) { _, new in
             var s = tg.settings
@@ -641,7 +641,7 @@ struct TelegramSetupView: View {
     }
 
     private var privacyNote: some View {
-        Label(tr("رسائل البوت في تيليجرام مو مشفّرة طرف لطرف. افتراضياً ينرسل كل شي (حتى كلمات السر و🟡 الحساسة) والرسالة كلها مشوّشة لين تلمسها. 🔴 السري جداً ما ينرسل إلا إذا فعّلته. الخزنة الوهمية ما ترسل شي.",
+        Label(tr("رسائل البوت في تيليجرام مب مشفّرة طرف لطرف. افتراضياً ينطرش كل شي (حتى كلمات السر والحساسة 🟡) والرسالة كلها مشوّشة لين تلمسها. السري جداً ما ينطرش إلا إذا فعّلته 🔴. الخزنة الوهمية ما تطرش شي.",
                  "Bot messages in Telegram aren't end-to-end encrypted. By default everything is sent (passwords and 🟡 sensitive too), the whole message blurred until tapped. 🔴 top-secret only if you turn it on. The decoy vault never posts."),
               systemImage: "exclamationmark.shield.fill")
             .font(Theme.font(12, .medium)).foregroundStyle(Theme.warn)
@@ -763,7 +763,7 @@ struct TelegramSetupView: View {
             } else if exclusive, !isBotChat, let botChat = list.first(where: { $0.type == "private" && !$0.isFriend && $0.enabled }) {
                 exclusive = false
                 await toggle(botChat, false)
-                state.show(tr("صار الإرسال لـ \(first.title) بدل محادثة البوت", "Now sending to \(first.title) instead of the bot chat"), icon: "arrow.triangle.swap")
+                state.show(tr("صار يطرش لـ \(first.title) بدل محادثة البوت", "Now sending to \(first.title) instead of the bot chat"), icon: "arrow.triangle.swap")
             }
         }
     }
@@ -810,7 +810,7 @@ struct TelegramSetupView: View {
             let n = try await tg.send(tg.testMessage())
             if n > 0 {
                 Haptics.success()
-                state.show(tr("انرسلت ✓ (\(n))", "Sent ✓ (\(n))"), icon: "paperplane.fill")
+                state.show(tr("انطرشت ✓ (\(n))", "Sent ✓ (\(n))"), icon: "paperplane.fill")
                 error = nil
             } else {
                 error = tr("ما وصلت لأي محادثة. فعّل وحدة على الأقل.", "It didn't reach any chat. Turn at least one on.")
@@ -834,14 +834,14 @@ struct DestinationChoiceSheet: View {
             ScrollView {
                 VStack(spacing: 12) {
                     EyeView(mood: .happy, size: 70, sounds: false).padding(.top, 18)
-                    Text(tr("وين تبي توصلك الرسائل؟", "Where should messages go?"))
+                    Text(tr("وين تبا توصلك الرسائل؟", "Where should messages go?"))
                         .font(Theme.font(22, .heavy)).foregroundStyle(Theme.text)
                     Text(tr("تقدر تغيّر أو تضيف أكثر من وحدة بعدين.", "You can change it or add more later."))
                         .font(Theme.font(13)).foregroundStyle(Theme.sub)
                     choice(.bot, "paperplane.fill", tr("محادثة البوت", "The bot chat"), tr("خاص فيك بس — الأسهل", "Just for you — easiest"))
                     choice(.group, "person.3.fill", tr("قروب", "A group"), tr("تختار قروب من قروباتك", "Pick one of your groups"))
                     choice(.channel, "megaphone.fill", tr("قناة", "A channel"), tr("البوت ينشر فيها كمشرف (نشر فقط)", "The bot posts as an admin (post only)"))
-                    choice(.person, "person.2.fill", tr("شخص ثاني", "Another person"), tr("ترسل له رابط ويضغط «ابدأ»", "Send them a link, they tap Start"))
+                    choice(.person, "person.2.fill", tr("شخص ثاني", "Another person"), tr("تطرش له رابط ويضغط «ابدأ»", "Send them a link, they tap Start"))
                 }
                 .padding(20)
             }

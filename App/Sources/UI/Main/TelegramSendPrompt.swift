@@ -24,7 +24,7 @@ struct TelegramSendPrompt: View {
             AuroraBackground()
             ScrollView {
                 VStack(spacing: 16) {
-                    SheetHeader(title: tr("إرسال للتيليجرام؟", "Send to Telegram?")) { finish(send: false) }
+                    SheetHeader(title: tr("نطرشه للتيليجرام؟", "Send to Telegram?")) { finish(send: false) }
                     header
                     modePicker
                     if mode == .cipher {
@@ -32,7 +32,7 @@ struct TelegramSendPrompt: View {
                         CipherPreview(plain: previewSource, cipher: cipher, key: key)
                     }
                     Toggle(isOn: $dontAsk) {
-                        Text(tr("لا تسألني بعدها (أرسل تلقائياً)", "Don't ask again (send automatically)"))
+                        Text(tr("لا تسألني بعدها (طرش تلقائياً)", "Don't ask again (send automatically)"))
                             .font(Theme.font(13, .semibold))
                     }
                     .tint(Theme.accent).glass(12)
@@ -71,8 +71,8 @@ struct TelegramSendPrompt: View {
             BrandAvatar(name: account.service, size: 48)
             VStack(alignment: .leading, spacing: 2) {
                 Text(account.service).font(Theme.font(17, .heavy)).foregroundStyle(Theme.text)
-                Text(account.sensitivity == .secret ? tr("🔴 سري جداً", "🔴 Top-secret")
-                     : account.sensitivity == .sensitive ? tr("🟡 حساس", "🟡 Sensitive") : tr("🟢 عادي", "🟢 Normal"))
+                Text(account.sensitivity == .secret ? tr("سري جداً 🔴", "🔴 Top-secret")
+                     : account.sensitivity == .sensitive ? tr("حساس 🟡", "🟡 Sensitive") : tr("عادي 🟢", "🟢 Normal"))
                     .font(Theme.font(12, .semibold)).foregroundStyle(Theme.sub)
             }
             Spacer()
@@ -82,15 +82,15 @@ struct TelegramSendPrompt: View {
 
     private var modePicker: some View {
         VStack(spacing: 10) {
-            choice(.normal, "paperplane.fill", tr("إرسال عادي", "Send normally"),
+            choice(.normal, "paperplane.fill", tr("طرشه عادي", "Send normally"),
                    tr("رسالة مرتّبة ومشوّشة، تنكشف باللمس.", "A tidy message, blurred, revealed on tap."))
-            choice(.cipher, "lock.shield.fill", tr("شفّره قبل الإرسال", "Encrypt it first"),
+            choice(.cipher, "lock.shield.fill", tr("شفّره قبل ما يتطرش", "Encrypt it first"),
                    tr("يتحوّل لطلاسم، ما يفكها إلا «أداة التشفير» في التطبيق.", "Turns into gibberish only the app's Cipher tool can read."))
             Button {
                 Haptics.tap()
                 showCipherIntro = true
             } label: {
-                Label(tr("وش يعني تشفير؟ شوف الشرح", "What does ciphering mean? Watch the walkthrough"),
+                Label(tr("شو يعني تشفير؟ شوف الشرح", "What does ciphering mean? Watch the walkthrough"),
                       systemImage: "play.circle.fill")
                     .font(Theme.font(12, .bold)).foregroundStyle(Theme.accent3)
             }
@@ -163,7 +163,7 @@ struct TelegramSendPrompt: View {
         do {
             let n = try await TelegramService.shared.sendAccountNow(account, cipher: mode == .cipher ? cipher : nil, key: key)
             Haptics.success()
-            state.show(n > 0 ? tr("انرسل ✓", "Sent ✓") : tr("ما وصل لأي محادثة", "Didn't reach any chat"), icon: "paperplane.fill")
+            state.show(n > 0 ? tr("انطرش ✓", "Sent ✓") : tr("ما وصل لأي محادثة", "Didn't reach any chat"), icon: "paperplane.fill")
         } catch {
             state.show(error.localizedDescription, icon: "exclamationmark.triangle.fill")
         }

@@ -88,7 +88,7 @@ final class SupabaseClient {
             return tr("طلبات كثيرة. انتظر دقيقة وجرّب مرة ثانية.", "Too many requests. Wait a minute and try again.")
         }
         if raw.localizedCaseInsensitiveContains("sending") && raw.localizedCaseInsensitiveContains("email") {
-            return tr("ما قدرنا نرسل الإيميل. تأكد من إعدادات الإرسال (SMTP) في Supabase وجرّب بعد دقيقة.",
+            return tr("ما قدرنا نطرش الإيميل. تأكد من إعدادات الإرسال (SMTP) في Supabase وجرّب بعد دقيقة.",
                       "Couldn't send the email. Check the SMTP settings in Supabase and try again in a minute.")
         }
         if raw.contains("otp_expired") || raw.localizedCaseInsensitiveContains("expired") || raw.localizedCaseInsensitiveContains("invalid") {

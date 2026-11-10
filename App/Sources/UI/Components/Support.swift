@@ -53,7 +53,7 @@ struct SupportSheet: View {
             VStack(spacing: 14) {
                 SheetHeader(title: tr("الدعم الفني", "Support")) { dismiss() }
                 EyeView(mood: .happy, size: 70, sounds: false)
-                Text(tr("تورّطت؟ ولا يهمك 🤝 كلّمنا مباشرة، وين تحب؟", "Stuck? No worries 🤝 Talk to us directly. Where would you like?"))
+                Text(tr("تورّطت؟ ولا يهمك فالك طيب 🤝 كلّمنا دايركت، وين تحب؟", "Stuck? No worries 🤝 Talk to us directly. Where would you like?"))
                     .font(Theme.font(16, .bold)).foregroundStyle(Theme.text).multilineTextAlignment(.center)
                 channel(icon: "paperplane.fill", title: "Telegram", handle: "@\(Support.telegram)",
                         colors: [Color(hex: 0x2AABEE), Color(hex: 0x229ED9)]) { openURL(Support.telegramURL) }

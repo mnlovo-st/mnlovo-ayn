@@ -832,7 +832,7 @@ struct BackupView: View {
                 Label(tr("تلقائي: الحسابات والملاحظات والتذكيرات والإعدادات تنحفظ في السحابة بعد كل تعديل.",
                          "Automatic: accounts, notes, reminders and settings sync after every change."),
                       systemImage: "arrow.triangle.2.circlepath.icloud.fill")
-                Label(tr("مشفّرة على جوالك بكلمة السر قبل ما تطلع. السيرفر ما يقدر يقرأها.",
+                Label(tr("مشفّرة على تلفونك بكلمة السر قبل ما تطلع. السيرفر ما يقدر يقرأها.",
                          "Encrypted on your phone with your password first. The server can't read it."),
                       systemImage: "lock.shield.fill")
                 Label(tr("الصور والفيديو والملفات ما تنرفع — احفظها بالنسخة الكاملة تحت.",
@@ -847,7 +847,7 @@ struct BackupView: View {
             if !sb.isConfigured {
                 Text(tr("السحابة غير مُعدّة بعد.", "The cloud isn't set up yet.")).font(Theme.font(14)).foregroundStyle(Theme.warn)
             } else if sb.session == nil {
-                Text(tr("مرة وحدة بس: بنرسل كود إلى \(state.profile?.email ?? "")", "One time only: we'll send a code to \(state.profile?.email ?? "")"))
+                Text(tr("مرة وحدة بس: بنطرش كود إلى \(state.profile?.email ?? "")", "One time only: we'll send a code to \(state.profile?.email ?? "")"))
                     .font(Theme.font(14)).foregroundStyle(Theme.sub)
                 if !codeSent {
                     PrimaryButton(title: tr("اربط السحابة", "Connect cloud"), icon: "envelope.fill", loading: loading) {

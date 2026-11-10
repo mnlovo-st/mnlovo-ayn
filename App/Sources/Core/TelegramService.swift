@@ -343,11 +343,12 @@ final class TelegramService {
         "\n<i>\(tag) · \(Self.esc(Fmt.date(Date())))</i>"
     }
 
+    /// The colour goes after the word, the way a label is read, not before it.
     private func levelText(_ l: Sensitivity) -> String {
         switch l {
-        case .normal: return "🟢 " + l.title
-        case .sensitive: return "🟡 " + l.title
-        case .secret: return "🔴 " + l.title
+        case .normal: return l.title + " 🟢"
+        case .sensitive: return l.title + " 🟡"
+        case .secret: return l.title + " 🔴"
         }
     }
 
@@ -394,7 +395,7 @@ final class TelegramService {
         var out = tr("📎 <b>ملف جديد في الخزنة</b>", "📎 <b>New file in the vault</b>")
         out += "\n\n<b>\(v(f.name))</b>\n"
         out += row(tr("الحجم", "Size"), Fmt.bytes(f.size))
-        out += tr("\n<i>الملف نفسه يبقى مشفّر في جوالك، ما ينرسل.</i>",
+        out += tr("\n<i>الملف نفسه يبقى مشفّر في تلفونك، ما ينطرش.</i>",
                   "\n<i>The file itself stays encrypted on your phone.</i>")
         return out + footer(tag)
     }

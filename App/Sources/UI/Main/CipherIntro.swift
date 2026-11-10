@@ -14,7 +14,7 @@ struct CipherIntro: View {
                  tr("مغطّاة، صح — بس أي أحد يمسكها يقدر يكشفها بلمسة. وتيليجرام نفسه يشوفها.",
                     "Covered, yes — but anyone holding your phone can tap to reveal it. And Telegram itself can read it.")),
                 (tr("فشفّرها قبل ما تطلع", "So cipher it before it leaves"),
-                 tr("التطبيق يحوّلها لطلاسم على جوالك، وبعدين يرسلها. اللي يوصل تيليجرام طلاسم من الأصل.",
+                 tr("التطبيق يحوّلها لطلاسم على تلفونك، وبعدين يرسلها. اللي يوصل تيليجرام طلاسم من الأصل.",
                     "The app turns it into gibberish on your phone first, then sends that. What reaches Telegram was never readable.")),
                 (tr("وما يفكّها إلا إنت", "And only you can undo it"),
                  tr("ترجع تنسخها وتلصقها في «أداة التشفير» بالتطبيق وتطلع واضحة. وفي AES بكلمة مرور تعرفها إنت بس.",
@@ -82,7 +82,7 @@ struct CipherIntro: View {
         let plain = ["Instagram", "saif@mnlovo", "Mn!2026$aver"]
         let cipherGlyphs = ["◈◇◆◉○●◐◑◒", "◓▲△▼▽◢◣◈◇◆◉", "●◐◑◒◓▲△▼▽◢◣◈"]
         return VStack(alignment: .leading, spacing: 8) {
-            chatHeader(tr("على جوالك", "On your phone"), "iphone", Theme.accent3)
+            chatHeader(tr("على تلفونك", "On your phone"), "iphone", Theme.accent3)
             Spacer()
             bubble(tr("🔐 حساب مشفّر", "🔐 Encrypted account")) {
                 VStack(alignment: .leading, spacing: 3) {
@@ -95,7 +95,7 @@ struct CipherIntro: View {
                 }
             }
             if step >= 5 {
-                Label(tr("كذا ينرسل — ما فيه شي مقروء", "That's what's sent — nothing readable"), systemImage: "checkmark.shield.fill")
+                Label(tr("كذا ينطرش — ما فيه شي مقروء", "That's what's sent — nothing readable"), systemImage: "checkmark.shield.fill")
                     .font(Theme.font(9, .bold)).foregroundStyle(Theme.ok)
             }
             Spacer()

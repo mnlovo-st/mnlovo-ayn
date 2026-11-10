@@ -51,7 +51,7 @@ struct CipherToolView: View {
     private var inputCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text(tab == .encode ? tr("النص اللي تبي تشفّره", "Text to encode") : tr("الصق النص المشفّر", "Paste the encoded text"))
+                Text(tab == .encode ? tr("النص اللي تبا تشفّره", "Text to encode") : tr("الصق النص المشفّر", "Paste the encoded text"))
                     .font(Theme.font(13, .bold)).foregroundStyle(Theme.sub)
                 Spacer()
                 PasteButton(payloadType: String.self) { items in

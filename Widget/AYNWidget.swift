@@ -388,7 +388,7 @@ struct SubscriptionView: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 6) {
                     Image(systemName: "creditcard.fill").font(.system(size: 12, weight: .bold)).foregroundStyle(indigo)
-                    Text(p.isArabic ? "الجاي" : "Next up").font(wf(11, .bold)).foregroundStyle(.white.opacity(0.6))
+                    Text(p.isArabic ? "الياي" : "Next up").font(wf(11, .bold)).foregroundStyle(.white.opacity(0.6))
                     Spacer()
                 }
                 Text(p.subTitle).font(wf(16, .heavy)).foregroundStyle(.white).lineLimit(1).minimumScaleFactor(0.7)

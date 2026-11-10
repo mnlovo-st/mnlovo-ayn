@@ -51,7 +51,7 @@ struct SupportDeskView: View {
 
     var body: some View {
         SheetScaffold(title: tr("مكتب الدعم الفني", "Support desk")) {
-            Label(tr("بيانات الخزنة نفسها مشفّرة في جوال المستخدم: ما تنشاف ولا تنغيّر كلمة سرها من هنا. اللي تقدر عليه: تلقى الحساب، تقارن معلوماته، تعدّل اسمه وإيميله ورقمه وتاريخ ميلاده، وتسوّي له كلمة مرور سحابية جديدة وترسل له الاسترجاع.",
+            Label(tr("بيانات الخزنة نفسها مشفّرة في تلفون المستخدم: ما تنشاف ولا تنغيّر كلمة سرها من هنا. اللي تقدر عليه: تلقى الحساب، تقارن معلوماته، تعدّل اسمه وإيميله ورقمه وتاريخ ميلاده، وتسوّي له كلمة مرور سحابية جديدة وترسل له الاسترجاع.",
                      "Vault contents are encrypted on the user's phone: they can't be read, and its master password can't be reset from here. What you can do: find the account, compare details, edit the username, email, phone and birth date, issue a new cloud password and send recovery help."),
                   systemImage: "lock.shield.fill")
                 .font(Theme.font(12, .medium)).foregroundStyle(Theme.accent)
@@ -76,7 +76,7 @@ struct SupportDeskView: View {
                             isPresented: $confirmEmail, titleVisibility: .visible) {
             Button(tr("غيّر الإيميل", "Change email")) { Task { await act("change_email", ["email": newEmail]) } }
         } message: {
-            Text(tr("تأكد إنك قارنت معلوماته. بعدها اضغط «أرسل له مساعدة الاسترجاع».", "Make sure you compared their details. Then tap “Send recovery help”."))
+            Text(tr("تأكد إنك قارنت معلوماته. بعدها اضغط «طرش له مساعدة الاسترجاع».", "Make sure you compared their details. Then tap “Send recovery help”."))
         }
         .confirmationDialog(tr("كلمة مرور سحابية جديدة؟", "Issue a new cloud password?"),
                             isPresented: $confirmPassword, titleVisibility: .visible) {
@@ -198,7 +198,7 @@ struct SupportDeskView: View {
 
             Divider().overlay(Theme.stroke)
             Text(tr("١. عدّل بياناته", "1. Edit their details")).font(Theme.font(14, .bold)).foregroundStyle(Theme.text)
-            Text(tr("خلّ الخانة فاضية إذا ما تبي تعدّلها. أي تعديل يوصله إشعار بتيليجرام عشان يطمّن إنك إنت اللي سويته — ويعرف لو أحد ثاني حاول.",
+            Text(tr("خلّ الخانة فاضية إذا ما تبا تعدّلها. أي تعديل يوصله إشعار بتيليجرام عشان يطمّن إنك إنت اللي سويته — ويعرف لو أحد ثاني حاول.",
                     "Leave a field empty to keep it as it is. Every change notifies them on Telegram, so they know it was you — and would notice if it weren't."))
                 .font(Theme.font(11)).foregroundStyle(Theme.faint)
             AYNField(title: tr("اسم المستخدم الجديد", "New username"), icon: "person.fill", text: $newUsername,
@@ -252,7 +252,7 @@ struct SupportDeskView: View {
                 }
                 .padding(10)
                 .background(RoundedRectangle(cornerRadius: 12).fill(Theme.surface))
-                Text(tr("انرسلت له على تيليجرام إذا كان رابطه. إذا ما كان رابطه، عطه إياها بنفس الطريقة اللي تواصل بها معك — ومره يغيّرها من التطبيق.",
+                Text(tr("انطرشت له على تيليجرام إذا كان رابطه. إذا ما كان رابطه، عطه إياها بنفس الطريقة اللي تواصل بها معاك — ومره يغيّرها من التطبيق.",
                         "Sent to them on Telegram if it's linked. If it isn't, pass it on through the same channel they contacted you by — and tell them to change it in the app."))
                     .font(Theme.font(11)).foregroundStyle(Theme.faint)
             }
@@ -261,8 +261,8 @@ struct SupportDeskView: View {
                 .font(Theme.font(11)).foregroundStyle(Theme.warn)
 
             Divider().overlay(Theme.stroke)
-            Text(tr("٤. أرسل له مساعدة الاسترجاع", "4. Send recovery help")).font(Theme.font(14, .bold)).foregroundStyle(Theme.text)
-            PrimaryButton(title: tr("أرسل كود الدخول + الخطوات", "Send sign-in code + steps"), icon: "paperplane.fill", loading: busy) {
+            Text(tr("٤. طرش له مساعدة الاسترجاع", "4. Send recovery help")).font(Theme.font(14, .bold)).foregroundStyle(Theme.text)
+            PrimaryButton(title: tr("طرش كود الدخول + الخطوات", "Send sign-in code + steps"), icon: "paperplane.fill", loading: busy) {
                 Task { await act("send_reset") }
             }
             Text(tr("يوصله كود على إيميل الحساب، ورسالة بالخطوات في تيليجرام إذا كان رابطه. يدخل بالكود ويرجّع بياناته بكلمة المرور أو مفتاح الاسترجاع، أو من «نسيت كلمة المرور» إذا جواله القديم معه.",
@@ -399,7 +399,7 @@ struct SupportDeskView: View {
         switch action {
         case "change_email":
             info = r
-            state.show(tr("تغيّر الإيميل ✓ الحين أرسل له مساعدة الاسترجاع", "Email changed ✓ now send recovery help"))
+            state.show(tr("تغيّر الإيميل ✓ الحين طرش له مساعدة الاسترجاع", "Email changed ✓ now send recovery help"))
         case "change_profile":
             info = r
             newUsername = ""; newPhone = ""; editDob = false
@@ -410,12 +410,12 @@ struct SupportDeskView: View {
             issuedPassword = r["password"] as? String
             let tg = (r["telegram"] as? NSNumber)?.intValue ?? 0
             let code = r["email_code_sent"] as? Bool ?? false
-            state.show(tr("انسوّت ✓ تيليجرام: \(tg) · كود الإيميل: \(code ? "انرسل" : "لا")",
+            state.show(tr("انسوّت ✓ تيليجرام: \(tg) · كود الإيميل: \(code ? "انطرش" : "لا")",
                           "Created ✓ Telegram: \(tg) · email code: \(code ? "sent" : "no")"), icon: "key.horizontal.fill")
         case "send_reset":
             let mailOK = r["email_sent"] as? Bool ?? false
             let tgCount = (r["telegram"] as? NSNumber)?.intValue ?? 0
-            state.show(tr("انرسل ✓ إيميل: \(mailOK ? "نعم" : "لا") · تيليجرام: \(tgCount)", "Sent ✓ email: \(mailOK ? "yes" : "no") · Telegram: \(tgCount)"),
+            state.show(tr("انطرش ✓ إيميل: \(mailOK ? "نعم" : "لا") · تيليجرام: \(tgCount)", "Sent ✓ email: \(mailOK ? "yes" : "no") · Telegram: \(tgCount)"),
                        icon: "paperplane.fill")
         case "delete_user":
             results.removeAll { $0.id == id }; selected = nil

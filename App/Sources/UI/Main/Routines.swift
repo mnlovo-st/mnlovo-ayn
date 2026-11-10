@@ -268,7 +268,7 @@ struct RoutineEditorSection: View {
     private var preview: some View {
         let next = routine.occurrences(from: Date(), span: 14).prefix(4)
         return VStack(alignment: .leading, spacing: 8) {
-            SectionTitle(text: tr("المرات الجاية", "Next times"), icon: "bell.and.waves.left.and.right")
+            SectionTitle(text: tr("المرات الياية", "Next times"), icon: "bell.and.waves.left.and.right")
             if next.isEmpty {
                 Text(tr("اختر يوم واحد على الأقل.", "Pick at least one day.")).font(Theme.font(12)).foregroundStyle(Theme.warn)
             }
@@ -599,7 +599,7 @@ struct RemindersIntro: View {
                     VStack(alignment: .leading, spacing: 1) {
                         Text(tr("Adobe يتجدد بعد ٥ أيام", "Adobe renews in 5 days"))
                             .font(Theme.font(10, .heavy)).foregroundStyle(Theme.text)
-                        Text(tr("تبي تلغيه قبل ما يُخصم؟", "Cancel before it's charged?"))
+                        Text(tr("تبا تلغيه قبل ما يُخصم؟", "Cancel before it's charged?"))
                             .font(Theme.font(9)).foregroundStyle(Theme.sub)
                     }
                     Spacer(minLength: 0)

@@ -47,7 +47,7 @@ struct PasswordCreator: View {
         switch mood {
         case .lookUp: return tr("ما أطالع 🙈 اكتب براحتك", "Not looking 🙈 type away")
         case .reading: return tr("قاعد أتحقق منها حرف حرف…", "Checking it letter by letter…")
-        case .suspicious: return tr("امم… في شي مو متطابق 🤨", "Hmm… something doesn't match 🤨")
+        case .suspicious: return tr("امم… في شي مب متطابق 🤨", "Hmm… something doesn't match 🤨")
         case .angry: return tr("ما تتطابق! جرّب مرة ثانية", "They don't match! Try again")
         case .happy: return tr("متطابقة ✓ ممتاز", "They match ✓ nice")
         default: return tr("اختر كلمة سر قوية. هي مفتاح كل شي.", "Pick a strong password. It unlocks everything.")

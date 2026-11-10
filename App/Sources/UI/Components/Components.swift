@@ -359,7 +359,7 @@ struct CodeField: View {
                     .font(Theme.font(12, .semibold)).foregroundStyle(tint)
                     .transition(.opacity.combined(with: .move(edge: .top)))
             } else if mail && autofill {
-                Text(tr("إذا تستخدم تطبيق «البريد» من Apple، الكود يطلع فوق الكيبورد لحاله.", "With Apple Mail, the code appears above the keyboard by itself."))
+                Text(tr("إذا تستخدم تطبيق «البريد» من Apple، الكود يطلع فوق الكيبورد بنفسه.", "With Apple Mail, the code appears above the keyboard by itself."))
                     .font(Theme.font(11)).foregroundStyle(Theme.faint)
                     .multilineTextAlignment(.center)
             }

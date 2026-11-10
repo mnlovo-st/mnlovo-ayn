@@ -106,7 +106,7 @@ async function alreadyLinked(cfg: Config, chatId: number, fromId?: number) {
   const on = (data ?? []).some((t: any) => t.enabled);
   await tg(cfg, "sendMessage", {
     chat_id: chatId, parse_mode: "HTML",
-    text: `✅ <b>مربوط من قبل</b>\n\nهالمحادثة مربوطة بـ MNLOVO SAVER ${on ? "والنشر شغّال 🟢" : "بس النشر موقّف ⏸️"}.\nما تحتاج تسوي شي ثاني.\n\nتبي تتحكم؟ اضغط الزر تحت أو اكتب /menu`,
+    text: `✅ <b>مربوط من قبل</b>\n\nهالمحادثة مربوطة بـ MNLOVO SAVER ${on ? "والنشر شغّال 🟢" : "بس النشر موقّف ⏸️"}.\nما تحتاج تسوي شي ثاني.\n\nتبا تتحكم؟ اضغط الزر تحت أو اكتب /menu`,
     reply_markup: { inline_keyboard: [[{ text: "⚙️ التحكم", callback_data: "tg:menu" }]] },
   });
 }
@@ -162,7 +162,7 @@ async function sendMenu(cfg: Config, chatId: number, fromId?: number, editId?: n
   const ts = await targetsOf(chatId);
   if (!ts.length) {
     await tg(cfg, "sendMessage", { chat_id: chatId, parse_mode: "HTML",
-      text: `👋 <b>هالمحادثة مو مربوطة</b>\n\nافتح تطبيق MNLOVO SAVER ← الإعدادات ← تيليجرام ← «ربط تيليجرام بضغطة».\n${FOOT}`,
+      text: `👋 <b>هالمحادثة مب مربوطة</b>\n\nافتح تطبيق MNLOVO SAVER ← الإعدادات ← تيليجرام ← «ربط تيليجرام بضغطة».\n${FOOT}`,
       reply_markup: { inline_keyboard: [SUPPORT_ROW] } });
     return;
   }
@@ -308,7 +308,7 @@ async function handleCallback(cfg: Config, q: Record<string, any>) {
   const data: string = q.data ?? "";
   const answer = (text = "", alert = false) => tg(cfg, "answerCallbackQuery", { callback_query_id: q.id, text, show_alert: alert });
   const ts = chatId ? await targetsOf(chatId) : [];
-  if (!ts.length) { await answer("هالمحادثة مو مربوطة."); return; }
+  if (!ts.length) { await answer("هالمحادثة مب مربوطة."); return; }
   const t = ts[0];
   const owner = await ownerOf(t, fromId);
   const isGroup = t.type !== "private";
@@ -331,9 +331,9 @@ async function handleCallback(cfg: Config, q: Record<string, any>) {
       const link = `https://t.me/${cfg.bot_username}?start=${code}`;
       await answer();
       await tg(cfg, "sendMessage", { chat_id: chatId, parse_mode: "HTML",
-        text: `👤 <b>رابط لشخص ثاني</b>\n\nأرسل هالرابط للشخص اللي تبيه يستقبل تحديثاتك. أول ما يفتحه ويضغط «ابدأ» ينربط.\n\n<code>${link}</code>\n\n⏳ صالح لمدة ٣٠ دقيقة ولمرة وحدة.\n${FOOT}`,
+        text: `👤 <b>رابط لشخص ثاني</b>\n\nطرش هالرابط للشخص اللي تباه يستقبل تحديثاتك. أول ما يفتحه ويضغط «ابدأ» ينربط.\n\n<code>${link}</code>\n\n⏳ صالح لمدة ٣٠ دقيقة ولمرة وحدة.\n${FOOT}`,
         reply_markup: { inline_keyboard: [
-          [{ text: "📤 أرسل الرابط", url: `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent("اضغط الرابط وبعدين «ابدأ» عشان توصلك تحديثات MNLOVO SAVER")}` }],
+          [{ text: "📤 طرش الرابط", url: `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent("اضغط الرابط وبعدين «ابدأ» عشان توصلك تحديثات MNLOVO SAVER")}` }],
           [{ text: "↩️ رجوع للتحكم", callback_data: "tg:menu" }],
         ] } });
       return;
@@ -343,7 +343,7 @@ async function handleCallback(cfg: Config, q: Record<string, any>) {
       const { data: reg } = await admin.from("saver_accounts").select("email_hint, username").eq("user_id", t.user_id).maybeSingle();
       await answer();
       await tg(cfg, "sendMessage", { chat_id: chatId, parse_mode: "HTML",
-        text: `🆘 <b>مساعدة في استرجاع الحساب</b>\n\nالحساب المربوط هنا:\n👤 ${reg?.username ? esc(reg.username) : "—"}\n✉️ ${reg?.email_hint ?? "—"}\n\n<b>إذا نسيت كلمة المرور:</b>\n١. افتح التطبيق ← «نسيت كلمة المرور؟»\n٢. حط الإيميل ورقم الهاتف وتاريخ الميلاد\n٣. حط الكود اللي يوصلك على الإيميل\n٤. رمز التحقق المتغير + Face ID، أو مفتاح الاسترجاع (٦ مجموعات)\n٥. سوّ كلمة مرور جديدة ✓\n\n<b>جوال جديد؟</b> «عندي حساب، تسجيل دخول» ← بالإيميل ← كلمة المرور أو مفتاح الاسترجاع.\n\n🔒 البوت يساعدك بس، ما يقدر يفتح خزنتك ولا يغيّر كلمة المرور — بياناتك مشفّرة في جوالك.\nما نطلب منك أبداً كلمة المرور أو مفتاح الاسترجاع.\n${FOOT}`,
+        text: `🆘 <b>مساعدة في استرجاع الحساب</b>\n\nالحساب المربوط هنا:\n👤 ${reg?.username ? esc(reg.username) : "—"}\n✉️ ${reg?.email_hint ?? "—"}\n\n<b>إذا نسيت كلمة المرور:</b>\n١. افتح التطبيق ← «نسيت كلمة المرور؟»\n٢. حط الإيميل ورقم الهاتف وتاريخ الميلاد\n٣. حط الكود اللي يوصلك على الإيميل\n٤. رمز التحقق المتغير + Face ID، أو مفتاح الاسترجاع (٦ مجموعات)\n٥. سوّ كلمة مرور جديدة ✓\n\n<b>تلفون جديد؟</b> «عندي حساب، تسجيل دخول» ← بالإيميل ← كلمة المرور أو مفتاح الاسترجاع.\n\n🔒 البوت يساعدك بس، ما يقدر يفتح خزنتك ولا يغيّر كلمة المرور — بياناتك مشفّرة في تلفونك.\nما نطلب منك أبداً كلمة المرور أو مفتاح الاسترجاع.\n${FOOT}`,
         reply_markup: { inline_keyboard: [SUPPORT_ROW, [{ text: "↩️ رجوع للتحكم", callback_data: "tg:menu" }]] } });
       return;
     }
@@ -367,7 +367,7 @@ ${row.enabled ? (row.bundle ? "الخاصية شغّالة والأمانة مح
     case "tg:unlink": {
       await answer();
       await tg(cfg, "editMessageText", { chat_id: chatId, message_id: msgId, parse_mode: "HTML",
-        text: `🔌 <b>متأكد تبي تفصل البوت من هنا؟</b>\nما بيوصل هنا أي شي بعدها. تقدر ترجع تربطه من التطبيق.`,
+        text: `🔌 <b>متأكد تبا تفصل البوت من هنا؟</b>\nما بيوصل هنا أي شي بعدها. تقدر ترجع تربطه من التطبيق.`,
         reply_markup: { inline_keyboard: [[{ text: "نعم، افصل", callback_data: "tg:unlink_yes" }, { text: "لا", callback_data: "tg:menu" }]] } });
       return;
     }
@@ -397,7 +397,7 @@ async function handleUpdate(cfg: Config, u: Record<string, any>) {
       if (m.chat.type === "private") {
         await tg(cfg, "sendMessage", {
           chat_id: m.chat.id, parse_mode: "HTML",
-          text: `👋 <b>أهلاً فيك في MNLOVO SAVER</b>\n\nعشان تربط حسابك:\n١. افتح تطبيق MNLOVO SAVER\n٢. الإعدادات ← تيليجرام\n٣. اضغط «ربط تيليجرام بضغطة»\n\nوبس! التطبيق يرجعك هنا ويربط لحاله.\n\n<i>MNLOVO SAVER · © MNLOVO 2026</i>`,
+          text: `👋 <b>أهلاً فيك في MNLOVO SAVER</b>\n\nعشان تربط حسابك:\n١. افتح تطبيق MNLOVO SAVER\n٢. الإعدادات ← تيليجرام\n٣. اضغط «ربط تيليجرام بضغطة»\n\nوبس! التطبيق يرجعك هنا ويربط بنفسه.\n\n<i>MNLOVO SAVER · © MNLOVO 2026</i>`,
         });
       }
       return;

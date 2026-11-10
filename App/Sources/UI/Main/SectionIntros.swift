@@ -161,13 +161,13 @@ struct AccountsIntro: View {
                  tr("اسم التطبيق، المستخدم، كلمة السر، الرابط. وتحدد حساسية كل حساب: عادي، حساس، أو سري.",
                     "App name, login, password, link. And you set how sensitive each one is: normal, sensitive or secret.")),
                 (tr("تنقفل قبل ما تنحفظ", "Locked before they're saved"),
-                 tr("كل شي يُشفّر على جوالك بمفتاح محمي بـ Secure Enclave. لا أنا ولا السيرفر نقدر نقراها.",
+                 tr("كل شي يُشفّر على تلفونك بمفتاح محمي بـ Secure Enclave. لا أنا ولا السيرفر نقدر نقراها.",
                     "Everything is encrypted on your phone with a key held in the Secure Enclave. Neither I nor the server can read it.")),
-                (tr("ورمز التحقق المتغير معك دايماً", "And your rotating code is always here"),
+                (tr("ورمز التحقق المتغير معاك دايماً", "And your rotating code is always here"),
                  tr("تضيف الـ 2FA للحساب، والرمز يتجدد كل ٣٠ ثانية ويتنسخ بضغطة. وتقدر تضيفه لتطبيق كلمات مرور آيفون.",
                     "Add 2FA to an account and the code refreshes every 30 seconds, one tap to copy. You can also add it to the iPhone Passwords app.")),
-                (tr("وإذا تبي، يوصل تيليجرامك", "And if you like, it reaches your Telegram"),
-                 tr("بعد كل إضافة أسألك: ترسله؟ وبأي تشفيرة؟ ويوصل مغطّى، ولا أحد يفهمه إلا إنت.",
+                (tr("وإذا تبا، يوصل تيليجرامك", "And if you like, it reaches your Telegram"),
+                 tr("بعد كل إضافة أسألك: تطرشه؟ وبأي تشفيرة؟ ويوصل مغطّى، ولا أحد يفهمه إلا إنت.",
                     "After each save I ask: send it? and with which cipher? It arrives covered, and only you can read it."))
             ],
             beats: [4, 4, 4, 4],
@@ -323,10 +323,10 @@ struct VaultIntro: View {
         IntroShell(
             captions: [
                 (tr("الخزنة للأشياء اللي ما تنسى", "The vault is for what you can't lose"),
-                 tr("صور الهوية والجوازات، ملفات، ملاحظات سرّية، أي شي تبيه بعيد عن الألبوم والواتساب.",
+                 tr("صور الهوية والجوازات، ملفات، ملاحظات سرّية، أي شي تباه بعيد عن الألبوم والواتساب.",
                     "ID and passport photos, files, private notes — anything you want out of your gallery and your chats.")),
                 (tr("قفل ثاني فوق قفل التطبيق", "A second lock above the app's lock"),
-                 tr("للخزنة رمز خاص فيها. يعني لو أحد فتح التطبيق بوجهك وإنت نايم، الخزنة لسا مقفولة.",
+                 tr("للخزنة رمز خاص فيها. يعني لو أحد فتح التطبيق بوجهك وإنت نايم، الخزنة بعدها مقفولة.",
                     "The vault has its own passcode. So even if someone opens the app, the vault is still shut.")),
                 (tr("وعندك كلمة مرور مزيّفة", "And you have a decoy password"),
                  tr("لو أحد ضغط عليك، تعطيه الكلمة المزيّفة: التطبيق يفتح على خزنة فاضية وكل شي الحقيقي مخفي.",
@@ -364,7 +364,7 @@ struct VaultIntro: View {
             IntroBits.row("note.text", tr("ملاحظة سرّية", "Private note"), tr("نص مشفّر", "encrypted text"),
                           tint: Color(hex: 0xFF5FA2), on: step >= 4)
             Spacer()
-            Label(tr("كلها مشفّرة على جوالك", "All encrypted on your phone"), systemImage: "lock.fill")
+            Label(tr("كلها مشفّرة على تلفونك", "All encrypted on your phone"), systemImage: "lock.fill")
                 .font(Theme.font(9, .bold)).foregroundStyle(Theme.ok)
         }
     }
@@ -466,7 +466,7 @@ struct VaultIntro: View {
             .frame(height: 96)
             .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.danger.opacity(step >= 3 ? 0.7 : 0.2), lineWidth: 1.5))
             if step >= 4 {
-                Label(tr("انرسلت تيليجرامك ✓", "Sent to your Telegram ✓"), systemImage: "paperplane.fill")
+                Label(tr("انطرشت تيليجرامك ✓", "Sent to your Telegram ✓"), systemImage: "paperplane.fill")
                     .font(Theme.font(9, .bold)).foregroundStyle(TelegramService.blue)
             }
             Spacer()

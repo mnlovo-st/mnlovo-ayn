@@ -105,7 +105,7 @@ struct SignUpFlow: View {
             Button(tr("إيه، كمّل", "Yes, continue")) { go(1) }
             Button(tr("لا، رجوع", "No, go back"), role: .cancel) { }
         } message: {
-            Text(tr("رقم الجوال هذا مسجّل مع: \(phoneHints.joined(separator: "، ")). تبي تكمّل وتسوي حساب جديد؟",
+            Text(tr("رقم التلفون هذا مسجّل مع: \(phoneHints.joined(separator: "، ")). تبا تكمّل وتسوي حساب جديد؟",
                     "This number is already linked to: \(phoneHints.joined(separator: ", ")). Continue with a new account?"))
         }
     }
@@ -229,7 +229,7 @@ struct SignUpFlow: View {
             StepHeader(icon: "envelope.badge.shield.half.filled",
                        title: tr("تأكيد الإيميل", "Verify your email"),
                        subtitle: sb.isConfigured
-                           ? tr("أرسلنا كود إلى\n\(input.email)", "We sent a code to\n\(input.email)")
+                           ? tr("طرشنا كود إلى\n\(input.email)", "We sent a code to\n\(input.email)")
                            : tr("التحقق بالإيميل يحتاج إعداد Supabase المجاني (٥ دقايق).", "Email codes need the free Supabase setup (5 minutes)."))
             if sb.isConfigured {
                 if input.emailVerified {
@@ -240,7 +240,7 @@ struct SignUpFlow: View {
                     Button {
                         Task { await sendEmail() }
                     } label: {
-                        Text(resendIn > 0 ? tr("إعادة الإرسال بعد \(resendIn) ث", "Resend in \(resendIn)s") : tr("إعادة إرسال الكود", "Resend code"))
+                        Text(resendIn > 0 ? tr("طرشه مرة ثانية بعد \(resendIn) ث", "Resend in \(resendIn)s") : tr("طرشه مرة ثانية", "Resend code"))
                             .font(Theme.font(14, .semibold))
                             .foregroundStyle(resendIn > 0 ? Theme.faint : Theme.accent)
                     }
@@ -364,7 +364,7 @@ struct SignUpFlow: View {
             }
             .tint(Color(hex: 0xFF5FA2))
             .glass(14)
-            Text(tr("اختيارية تماماً، وتقدر تشغّلها أو توقفها وقت ما تبي من الإعدادات.",
+            Text(tr("اختيارية تماماً، وتقدر تشغّلها أو توقفها وقت ما تبا من الإعدادات.",
                     "Completely optional — turn it on or off any time in Settings."))
                 .font(Theme.font(12)).foregroundStyle(Theme.faint)
                 .multilineTextAlignment(.center)
@@ -375,7 +375,7 @@ struct SignUpFlow: View {
         VStack(spacing: 14) {
             StepHeader(icon: "checkmark.shield.fill",
                        title: tr("آخر خطوة", "Last step"),
-                       subtitle: tr("فعّل اللي تبيه. تقدر تغيّرها بعدين.", "Turn on what you like. You can change these later."))
+                       subtitle: tr("فعّل اللي تباه. تقدر تغيّرها بعدين.", "Turn on what you like. You can change these later."))
             toggleRow(icon: Biometrics.icon, title: tr("\(Biometrics.name) + كلمة السر عند الدخول", "\(Biometrics.name) + password to enter"),
                       sub: tr("أقوى حماية. بدونه: كلمة السر + رمز التحقق", "Strongest. Without it: password + 2FA code"),
                       isOn: $input.enableBiometrics)
@@ -430,7 +430,7 @@ struct SignUpFlow: View {
         do {
             try await sb.sendEmailCode(to: input.email.trimmingCharacters(in: .whitespaces))
             emailSent = true
-            state.show(tr("أرسلنا الكود ✉️", "Code sent ✉️"), icon: "envelope.fill")
+            state.show(tr("طرشنا الكود ✉️", "Code sent ✉️"), icon: "envelope.fill")
             resendIn = 60
             while resendIn > 0 {
                 await pause(1)

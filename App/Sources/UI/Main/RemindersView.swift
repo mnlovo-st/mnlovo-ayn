@@ -314,7 +314,7 @@ struct ReminderEditor: View {
                             .transition(.opacity.combined(with: .move(edge: .bottom)))
                     } else {
                         VStack(alignment: .leading, spacing: 8) {
-                            SectionTitle(text: reminder.kind == .subscription ? tr("تاريخ التجديد الجاي", "Next renewal") : tr("موعد التسليم", "Due"), icon: "calendar")
+                            SectionTitle(text: reminder.kind == .subscription ? tr("تاريخ التجديد الياي", "Next renewal") : tr("موعد التسليم", "Due"), icon: "calendar")
                             DatePicker("", selection: $reminder.due, displayedComponents: [.date, .hourAndMinute])
                                 .datePickerStyle(.graphical)
                                 .tint(Theme.accent)

@@ -18,7 +18,7 @@ enum AppError: LocalizedError {
         case .badBackup: return tr("ملف النسخة الاحتياطية تالف أو كلمة السر غلط.", "Backup file is damaged or the password is wrong.")
         case .wrongCode: return tr("رمز التحقق غلط. استخدم الرمز اللي يطلع الحين في «كلمات السر» تحت اسم MNLOVO SAVER.",
                                    "Wrong code. Use the code currently shown in Passwords under MNLOVO SAVER.")
-        case .clockOff: return tr("الرمز كان صحيح بس ساعة جوالك مو مضبوطة. فعّل «ضبط تلقائي» للوقت من الإعدادات ← عام ← التاريخ والوقت.",
+        case .clockOff: return tr("الرمز كان صحيح بس ساعة تلفونك مب مضبوطة. فعّل «ضبط تلقائي» للوقت من الإعدادات ← عام ← التاريخ والوقت.",
                                   "The code is right but your iPhone clock is off. Turn on Set Automatically in Settings → General → Date & Time.")
         case .noFaceID: return tr("هالطريقة تحتاج \(Biometrics.name) مفعّل على هالجوال. استخدم مفتاح الاسترجاع بدالها.",
                                   "This method needs \(Biometrics.name) set up on this iPhone. Use your recovery key instead.")
@@ -219,7 +219,7 @@ final class AppState: ObservableObject {
             for f in files { out.append("• \(f.name) — \(Fmt.bytes(f.size))") }
             out.append("")
         }
-        out.append(tr("الملفات والصور نفسها تبقى مشفّرة في الجهاز وما تنرسل.",
+        out.append(tr("الملفات والصور نفسها تبقى مشفّرة في الجهاز وما تنطرش.",
                       "The files and photos themselves stay encrypted on the device and are not sent."))
         return out.joined(separator: "\n")
     }

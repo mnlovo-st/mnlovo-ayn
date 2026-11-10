@@ -144,7 +144,7 @@ struct SubscriptionsSummary: View {
                             Image(systemName: s.planToCancel ? "scissors" : "arrow.triangle.2.circlepath")
                                 .foregroundStyle(s.planToCancel ? Theme.warn : Theme.accent2)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(tr("الجاي: \(n.displayTitle)", "Next: \(n.displayTitle)"))
+                                Text(tr("الياي: \(n.displayTitle)", "Next: \(n.displayTitle)"))
                                     .font(Theme.font(14, .bold)).foregroundStyle(Theme.text).lineLimit(1)
                                 Text("\(Fmt.remaining(until: n.due)) · \(s.priceText) · \(s.cycle.title)")
                                     .font(Theme.font(11)).foregroundStyle(Theme.sub)
