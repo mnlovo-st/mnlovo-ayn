@@ -106,7 +106,7 @@ struct SettingsView: View {
                             value: TelegramService.shared.isReady ? tr("مفعّلة", "On") : tr("مطفأة", "Off"),
                             tint: Color(hex: 0x2AABEE)) { sheet = .telegram }
                         divider
-                        row("heart.text.square.fill", tr("نبض الحياة (الأمانة)", "Heartbeat (legacy)"),
+                        row("scroll.fill", tr("بعد وفاتي (الوصية والأمانة)", "After I'm gone (will & legacy)"),
                             value: LegacyService.shared.status.isArmed ? tr("شغّالة", "Armed")
                                  : (UserDefaults.standard.bool(forKey: "legacy.wanted") ? tr("أكمل الإعداد", "Finish setup") : tr("مطفأة", "Off")),
                             tint: Color(hex: 0xFF5FA2)) { sheet = .legacy }
@@ -131,6 +131,15 @@ struct SettingsView: View {
                 group(tr("أدوات", "Tools"), "wand.and.stars") {
                     row("character.bubble.fill", tr("أداة التشفير وفك الترجمة", "Cipher & decode tool"),
                         value: tr("\(Cipher.allCases.count) طرق", "\(Cipher.allCases.count) ways")) { sheet = .cipher }
+                    row("play.rectangle.on.rectangle.fill", tr("أعد شرح الأقسام", "Replay the section intros"),
+                        value: tr("حسابات · خزنة · تذكيرات", "Accounts · Vault · Reminders")) {
+                        for k in ["intro.accounts.seen", "intro.vault.seen", "intro.reminders.seen"] {
+                            UserDefaults.standard.set(false, forKey: k)
+                        }
+                        Haptics.success()
+                        state.show(tr("بتطلع لك الشروحات أول ما تفتح كل قسم", "The intros will play when you open each section"),
+                                   icon: "play.circle.fill")
+                    }
                 }
 
                 group(tr("المظهر والصوت", "Look & sound"), "paintpalette.fill") {

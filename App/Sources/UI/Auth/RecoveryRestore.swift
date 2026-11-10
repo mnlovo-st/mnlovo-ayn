@@ -151,7 +151,7 @@ struct RecoveryView: View {
                        sub: tr("الـ ٦ مجموعات اللي حفظتها وقت إنشاء الحساب", "The 6 groups you saved when you created the account"),
                        enabled: true)
             if method == .code {
-                CodeField(code: $totp, autofill: false)
+                CodeField(code: $totp)
                 Text(tr("بعد الرمز بنطلب وجهك عشان نفتح مفتاح الخزنة.", "After the code we'll ask for your face to open the vault key."))
                     .font(Theme.font(12)).foregroundStyle(Theme.sub).multilineTextAlignment(.center)
             } else {

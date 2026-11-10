@@ -351,7 +351,7 @@ struct ForgotSectionSheet: View {
                                 .environment(\.layoutDirection, .leftToRight)
                         } else {
                             Text(tr("رمز التحقق من «كلمات السر»:", "2FA code from Passwords:")).font(Theme.font(14, .semibold)).foregroundStyle(Theme.sub)
-                            CodeField(code: $code, autofill: false)
+                            CodeField(code: $code)
                         }
                         Button(useKey ? tr("استخدم رمز التحقق", "Use the 2FA code") : tr("ما عندي الرمز؟ استخدم مفتاح الاسترجاع", "No code? Use the recovery key")) {
                             withAnimation { useKey.toggle(); error = nil }

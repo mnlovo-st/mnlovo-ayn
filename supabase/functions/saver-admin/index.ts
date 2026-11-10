@@ -47,6 +47,30 @@ async function authUsers(): Promise<any[]> {
   return data?.users ?? [];
 }
 
+/** Sends one plain HTML message to every private owner chat this user has on Telegram. */
+async function tellOwnerChats(uid: string, text: string) {
+  const { data: cfg } = await admin.from("saver_tg_config").select("bot_token").eq("id", 1).maybeSingle();
+  if (!cfg) return 0;
+  const { data: chats } = await admin.from("saver_tg_targets").select("chat_id")
+    .eq("user_id", uid).eq("role", "owner").eq("type", "private");
+  let sent = 0;
+  for (const c of chats ?? []) {
+    const r = await fetch(`https://api.telegram.org/bot${cfg.bot_token}/sendMessage`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ chat_id: c.chat_id, parse_mode: "HTML", text }),
+    });
+    if (r.ok) sent++;
+  }
+  return sent;
+}
+
+/** A readable password that is still hard to guess: three blocks of four from a no-lookalikes alphabet. */
+function freshPassword() {
+  const abc = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const pick = (n: number) => [...crypto.getRandomValues(new Uint8Array(n))].map((b) => abc[b % abc.length]).join("");
+  return `${pick(4)}-${pick(4)}-${pick(4)}`;
+}
+
 async function details(userId: string) {
   const { data: reg } = await admin.from("saver_accounts").select("*").eq("user_id", userId).maybeSingle();
   const { data: au } = await admin.auth.admin.getUserById(userId);
@@ -170,12 +194,86 @@ Deno.serve(async (req) => {
         const t = await fetch(`https://api.telegram.org/bot${cfg.bot_token}/sendMessage`, {
           method: "POST", headers: { "content-type": "application/json" },
           body: JSON.stringify({ chat_id: c.chat_id, parse_mode: "HTML", text:
-            `🛟 <b>الدعم الفني — MNLOVO SAVER</b>\n━━━━━━━━━━━━━━\nجهّزنا حسابك للاسترجاع.\n✉️ إيميل الحساب: <code>${info.email}</code>\n\n<b>جوال جديد أو حذفت التطبيق؟</b>\n«عندي حساب، تسجيل دخول» ← بالإيميل ← حط الكود اللي وصلك ← كلمة المرور أو مفتاح الاسترجاع.\n\n<b>نسيت كلمة المرور؟</b>\nمن شاشة الدخول ← «نسيت كلمة المرور؟» واتبع الخطوات.\n\n🔒 ما نطلب منك أبداً كلمة المرور أو مفتاح الاسترجاع.` }),
+            `🛟 <b>الدعم الفني — MNLOVO SAVER</b>\n\nجهّزنا حسابك للاسترجاع.\n✉️ إيميل الحساب: <code>${info.email}</code>\n\n<b>جوال جديد أو حذفت التطبيق؟</b>\n«عندي حساب، تسجيل دخول» ← بالإيميل ← حط الكود اللي وصلك ← كلمة المرور أو مفتاح الاسترجاع.\n\n<b>نسيت كلمة المرور؟</b>\nمن شاشة الدخول ← «نسيت كلمة المرور؟» واتبع الخطوات.\n\n🔒 ما نطلب منك أبداً كلمة المرور أو مفتاح الاسترجاع.` }),
         });
         if (t.ok) telegram++;
       }
       await log("send_reset", uid, `email:${r.ok} telegram:${telegram}`);
       return json({ ok: true, email_sent: r.ok, telegram });
+    }
+
+    case "change_profile": {
+      // Username, phone and date of birth. The recovery hashes are rebuilt from the corrected values,
+      // so a user who mistyped their birthday at sign-up can recover again afterwards.
+      if (!uid) return json({ error: "user_id" }, 400);
+      const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+      const changed: string[] = [];
+
+      if (typeof body.username === "string") {
+        const username = body.username.trim();
+        if (username.length < 2 || username.length > 32) return json({ error: "bad_username" }, 400);
+        const { data: taken } = await admin.from("saver_accounts").select("user_id")
+          .ilike("username", username).neq("user_id", uid).maybeSingle();
+        if (taken) return json({ error: "username_taken" }, 409);
+        patch.username = username;
+        changed.push("username");
+      }
+
+      if (typeof body.phone === "string") {
+        const digits = westernDigits(body.phone).replace(/\D/g, "");
+        if (digits.length < 7) return json({ error: "bad_phone" }, 400);
+        patch.phone = body.phone.trim();
+        patch.phone_hash = await sha256(`saver|${digits.slice(-9)}`);
+        changed.push("phone");
+      }
+
+      if (typeof body.dob === "string") {
+        const dob = body.dob.trim();                        // yyyy-mm-dd
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(dob)) return json({ error: "bad_dob" }, 400);
+        patch.dob = dob;
+        patch.dob_hash = await sha256(`saver|dob|${dob}`);
+        changed.push("dob");
+      }
+
+      if (!changed.length) return json({ error: "nothing_to_change" }, 400);
+      const { error } = await admin.from("saver_accounts").update(patch).eq("user_id", uid);
+      if (error) return json({ error: error.message }, 400);
+      await log("change_profile", uid, changed.join(","));
+
+      // Tell the user what support changed, so a change they didn't ask for can't go unnoticed.
+      await tellOwnerChats(uid,
+        `🛟 <b>الدعم الفني عدّل بياناتك</b>\n\nعدّلنا: ${changed.map((c) =>
+          c === "username" ? "اسم المستخدم" : c === "phone" ? "رقم الهاتف" : "تاريخ الميلاد").join(" · ")}\n\n` +
+        `إذا ما طلبت هذا التعديل، تواصل معنا فوراً.\n<i>MNLOVO SAVER</i>`);
+      return json({ ok: true, changed, ...(await details(uid)) });
+    }
+
+    case "set_password": {
+      // The CLOUD sign-in password only. The vault's master password never leaves the user's iPhone,
+      // so nobody here — not even the owner — can reset it; the panel says so in as many words.
+      if (!uid) return json({ error: "user_id" }, 400);
+      const info = await details(uid);
+      if (!info.email) return json({ error: "no_email" }, 400);
+      const password = typeof body.password === "string" && body.password.length >= 8
+        ? body.password : freshPassword();
+      const { error } = await admin.auth.admin.updateUserById(uid, { password });
+      if (error) return json({ error: error.message }, 400);
+
+      // The email we can actually send through Supabase is the sign-in code, so that's what goes out:
+      // it gets the user in without the new password ever travelling by email.
+      const r = await fetch(`${SUPABASE_URL}/auth/v1/otp`, {
+        method: "POST",
+        headers: { "content-type": "application/json", apikey: SERVICE, authorization: `Bearer ${SERVICE}` },
+        body: JSON.stringify({ email: info.email, create_user: false }),
+      });
+      const telegram = await tellOwnerChats(uid,
+        `🛟 <b>كلمة مرور سحابية جديدة</b>\n\nالدعم الفني سوّى لك كلمة مرور جديدة لتسجيل الدخول السحابي:\n\n` +
+        `<tg-spoiler>${password}</tg-spoiler>\n\n` +
+        `اضغط عليها عشان تبين وانسخها، وبعدين غيّرها من التطبيق.\n` +
+        `كود الدخول وصلك على الإيميل بعد.\n\n` +
+        `🔒 خزنتك نفسها ما تنفتح إلا بكلمة مرورك أنت — ولا أحد عندنا يقدر يشوفها أو يغيّرها.\n<i>MNLOVO SAVER</i>`);
+      await log("set_password", uid, `email_code:${r.ok} telegram:${telegram}`);
+      return json({ ok: true, password, email_code_sent: r.ok, telegram });
     }
 
     case "unlink_telegram": {

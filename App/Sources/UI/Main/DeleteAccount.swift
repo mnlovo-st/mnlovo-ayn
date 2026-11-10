@@ -120,7 +120,7 @@ struct DeleteAccountSheet: View {
             } else {
                 Text(tr("من تطبيق «كلمات السر» تحت اسم MNLOVO SAVER", "From the Passwords app under MNLOVO SAVER"))
                     .font(Theme.font(13)).foregroundStyle(Theme.sub)
-                CodeField(code: $code, tint: Theme.danger, autofill: false)
+                CodeField(code: $code, tint: Theme.danger)
                     .onChange(of: code) { _, v in if v.count == 6 { checkCode() } }
             }
             Button(useRecovery ? tr("استخدم رمز التحقق", "Use the 2FA code") : tr("ما عندي الرمز؟ استخدم مفتاح الاسترجاع", "No code? Use the recovery key")) {

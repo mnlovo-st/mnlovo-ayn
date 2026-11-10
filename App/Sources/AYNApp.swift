@@ -111,64 +111,108 @@ struct RootView: View {
     }
 }
 
-/// What the app switcher shows: the brand, locked and protected — never your data.
+/// What the app switcher shows: a shut eye and nothing else — never your data.
+///
+/// The first version was a glowing app icon in the middle of coloured blobs, which read as a
+/// splash screen rather than a shut door. This one is deliberately quiet: a dark field, a hairline
+/// seam where the lid has closed, the eye shut over it, and the wordmark small underneath. It looks
+/// like something that has been put away on purpose.
 struct PrivacyCover: View {
     var recording: Bool
+
+    private var accentLine: Color { recording ? Theme.danger : Theme.accent }
+
     var body: some View {
         ZStack {
-            Theme.bg
-            RadialGradient(colors: [Theme.accent2.opacity(0.55), .clear], center: .init(x: 0.15, y: 0.1), startRadius: 0, endRadius: 420)
-            RadialGradient(colors: [Theme.accent.opacity(0.45), .clear], center: .init(x: 0.9, y: 0.85), startRadius: 0, endRadius: 460)
-            RadialGradient(colors: [Theme.accent3.opacity(0.30), .clear], center: .init(x: 0.85, y: 0.15), startRadius: 0, endRadius: 300)
-            Rectangle().fill(.ultraThinMaterial).opacity(0.35)
+            // 1. the field: near-black, with one soft breath of colour at the very top
+            LinearGradient(colors: [Color(hex: 0x0B1016), Color(hex: 0x05080B)], startPoint: .top, endPoint: .bottom)
+            RadialGradient(colors: [accentLine.opacity(0.14), .clear], center: .init(x: 0.5, y: 0.34),
+                           startRadius: 0, endRadius: 320)
 
-            VStack(spacing: 22) {
-                Spacer()
-                ZStack(alignment: .bottomTrailing) {
-                    ZStack {
-                        Circle().fill(Theme.accent.opacity(0.25)).frame(width: 230, height: 230).blur(radius: 40)
-                        Circle().strokeBorder(Theme.brandGradient, lineWidth: 1.5).frame(width: 196, height: 196).opacity(0.7)
-                        Circle().strokeBorder(Color.white.opacity(0.08), lineWidth: 1).frame(width: 226, height: 226)
-                        Image("BrandIcon")
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 150, height: 150)
-                            .clipShape(RoundedRectangle(cornerRadius: 36, style: .continuous))
-                            .overlay(RoundedRectangle(cornerRadius: 36, style: .continuous).strokeBorder(Color.white.opacity(0.18), lineWidth: 1))
-                            .shadow(color: Theme.accent.opacity(0.6), radius: 26)
+            // 2. engraved hairlines, like the guilloche on a document — texture without noise
+            GeometryReader { geo in
+                Path { p in
+                    let step: CGFloat = 13
+                    var x = -geo.size.height
+                    while x < geo.size.width + geo.size.height {
+                        p.move(to: CGPoint(x: x, y: 0))
+                        p.addLine(to: CGPoint(x: x + geo.size.height, y: geo.size.height))
+                        x += step
                     }
+                }
+                .stroke(Color.white.opacity(0.022), lineWidth: 1)
+            }
+            .allowsHitTesting(false)
+
+            VStack(spacing: 0) {
+                Spacer()
+
+                // 3. the shut eye, sitting on the seam
+                ZStack {
+                    // the seam itself, fading out to both edges
+                    LinearGradient(colors: [.clear, accentLine.opacity(0.55), .clear], startPoint: .leading, endPoint: .trailing)
+                        .frame(height: 1)
+                        .shadow(color: accentLine.opacity(0.5), radius: 8)
+                    ClosedEye()
+                        .stroke(Theme.text.opacity(0.9), style: StrokeStyle(lineWidth: 2.6, lineCap: .round, lineJoin: .round))
+                        .frame(width: 128, height: 54)
+                        .shadow(color: accentLine.opacity(0.35), radius: 14)
+                }
+                .frame(height: 70)
+
+                // 4. the wordmark, quiet
+                Text(Brand.appName)
+                    .font(Theme.font(16, .heavy))
+                    .foregroundStyle(Theme.text.opacity(0.72))
+                    .tracking(6)
+                    .padding(.top, 26)
+
+                // 5. one line of status, and nothing more
+                HStack(spacing: 7) {
                     Image(systemName: recording ? "record.circle" : "lock.fill")
-                        .font(.system(size: 22, weight: .heavy))
-                        .foregroundStyle(Theme.bg)
-                        .frame(width: 50, height: 50)
-                        .background(Circle().fill(recording ? AnyShapeStyle(Theme.danger) : AnyShapeStyle(Theme.gradient)))
-                        .overlay(Circle().strokeBorder(Theme.bg, lineWidth: 4))
-                        .offset(x: -18, y: -14)
+                        .font(.system(size: 11, weight: .bold))
+                    Text(recording ? tr("الشاشة تُسجّل — المحتوى مخفي", "Screen is recording — content hidden")
+                                   : tr("مقفلة", "Locked"))
+                        .font(Theme.font(12, .bold))
                 }
-                VStack(spacing: 10) {
-                    Text(Brand.appName)
-                        .font(Theme.font(34, .black))
-                        .foregroundStyle(Theme.brandGradient)
-                        .tracking(1.5)
-                    HStack(spacing: 8) {
-                        Image(systemName: recording ? "eye.slash.fill" : "checkmark.shield.fill")
-                        Text(recording ? tr("المحتوى مخفي أثناء تسجيل الشاشة", "Hidden during screen recording")
-                                       : tr("مقفلة ومحمية", "Locked & protected"))
-                    }
-                    .font(Theme.font(15, .bold))
-                    .foregroundStyle(Theme.text.opacity(0.9))
-                    .padding(.horizontal, 16).frame(height: 38)
-                    .background(Capsule().fill(Color.white.opacity(0.08)))
-                    .overlay(Capsule().strokeBorder(Color.white.opacity(0.14)))
-                }
+                .foregroundStyle(recording ? Theme.danger : Theme.sub)
+                .padding(.horizontal, 13).frame(height: 30)
+                .background(Capsule().fill(Color.white.opacity(0.05)))
+                .overlay(Capsule().strokeBorder(recording ? Theme.danger.opacity(0.4) : Color.white.opacity(0.08)))
+                .padding(.top, 14)
+
                 Spacer()
-                Text("AES-256 · Secure Enclave")
-                    .font(Theme.font(12, .semibold)).foregroundStyle(Theme.faint).tracking(1)
-                Text(Brand.copyright).font(Theme.font(12, .bold)).foregroundStyle(Theme.faint)
-                    .padding(.bottom, 30)
+
+                Text(Brand.copyright)
+                    .font(Theme.font(11, .semibold))
+                    .foregroundStyle(Theme.text.opacity(0.22))
+                    .tracking(1)
+                    .padding(.bottom, 34)
             }
         }
         .ignoresSafeArea()
+    }
+}
+
+/// The mascot's eye with the lid down: one closed curve plus three short lashes.
+/// Drawn rather than drawn-from-an-asset so it stays crisp at any size and follows the theme colour.
+private struct ClosedEye: Shape {
+    func path(in r: CGRect) -> Path {
+        var p = Path()
+        let w = r.width, h = r.height
+        // the lid: a shallow arc, heavier in the middle than a plain line
+        p.move(to: CGPoint(x: r.minX, y: r.midY))
+        p.addQuadCurve(to: CGPoint(x: r.maxX, y: r.midY),
+                       control: CGPoint(x: r.midX, y: r.midY + h * 0.52))
+        // three lashes, falling away from the lid
+        let lashes: [(CGFloat, CGFloat, CGFloat)] = [(0.26, 0.30, 0.26), (0.5, 0.42, 0.0), (0.74, 0.30, -0.26)]
+        for (fx, len, lean) in lashes {
+            let x = r.minX + w * fx
+            let y = r.midY + h * (0.52 * (1 - pow((fx - 0.5) * 2, 2)))
+            p.move(to: CGPoint(x: x, y: y))
+            p.addLine(to: CGPoint(x: x + w * 0.06 * lean, y: y + h * len))
+        }
+        return p
     }
 }
 

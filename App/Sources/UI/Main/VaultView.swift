@@ -23,6 +23,8 @@ struct VaultView: View {
     @State private var renameText = ""
     @State private var shareURL: URL?
     @State private var revealed: Set<UUID> = []
+    @AppStorage("intro.vault.seen") private var introSeen = false
+    @State private var showIntro = false
 
     private var filteredFiles: [VaultFile] {
         let q = query.lowercased().trimmingCharacters(in: .whitespaces)
@@ -117,6 +119,15 @@ struct VaultView: View {
                 renaming = nil
             }
             Button(tr("إلغاء", "Cancel"), role: .cancel) { renaming = nil }
+        }
+        .onAppear {
+            // Shown once, and never over the decoy vault — the intro would give the trick away.
+            if !introSeen && !state.isDecoy {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { showIntro = true }
+            }
+        }
+        .fullScreenCover(isPresented: $showIntro) {
+            VaultIntro { introSeen = true; showIntro = false }
         }
     }
 

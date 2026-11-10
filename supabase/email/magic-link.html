@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<!-- Designed light & bright; these let a dark-mode client re-tint it cleanly instead of force-inverting. -->
-<meta name="color-scheme" content="light dark">
-<meta name="supported-color-schemes" content="light dark">
+<!-- Light only: tells Mail/Gmail not to re-tint or invert, so it looks the same for everybody. -->
+<meta name="color-scheme" content="light only">
+<meta name="supported-color-schemes" content="light only">
 <title>MNLOVO SAVER</title>
 <style>
-  :root { color-scheme: light dark; }
+  :root { color-scheme: light only; supported-color-schemes: light only; }
   body { margin:0; padding:0; background:#EEF2F7; }
   a { text-decoration:none; }
   .wrap { width:100%; background:#EEF2F7; padding:32px 16px; }
@@ -32,17 +32,6 @@
           font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Tahoma,Arial,sans-serif; }
   .en { direction:ltr; text-align:center; font-size:13px; color:#7A8696; margin:18px 0 0;
         padding-top:16px; border-top:1px solid #EDF0F4; }
-  @media (prefers-color-scheme: dark) {
-    body,.wrap { background:#0B0D14 !important; }
-    .card { background:#141824 !important; border-color:#242A3A !important; box-shadow:none !important; }
-    .hero { background:linear-gradient(135deg,#0E2B28 0%,#161A33 55%,#241535 100%) !important; }
-    .brand { color:#39E6C8 !important; }
-    h1 { color:#F2F5FA !important; }
-    p,.meta,.foot,.en { color:#9AA6B8 !important; }
-    .code { color:#39E6C8 !important; background:#0E2B28 !important; border-color:#1F6B5E !important; }
-    .note { background:#2A2314 !important; border-color:#4A3C17 !important; color:#F0CE7A !important; }
-    .en { border-top-color:#242A3A !important; }
-  }
 </style>
 </head>
 <body>
@@ -69,6 +58,7 @@
         <h1>رمز الدخول</h1>
         <p>هذا رمز تسجيل الدخول لحسابك. اكتبه في التطبيق.</p>
         <div class="code">{{ .Token }}</div>
+        <p class="meta" style="direction:ltr">Your MNLOVO SAVER verification code is {{ .Token }}</p>
         <p class="meta">صالح لمدة ساعة واحدة · لمرة واحدة فقط</p>
 
         <div class="note">

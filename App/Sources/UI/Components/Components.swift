@@ -235,7 +235,7 @@ struct AYNField: View {
 
 enum AYNFieldID: Hashable {
     case username, email, phone, password, confirm, code, recovery, current, new, newConfirm, section, sectionConfirm
-    case service, login, url, notes, title, search, secret, sbURL, sbKey, duress, duressConfirm
+    case service, login, url, notes, title, search, secret, sbURL, sbKey, duress, duressConfirm, legacyWill
 }
 
 /// Big 6-digit code field (2FA / email code).
@@ -250,6 +250,9 @@ struct CodeField: View {
     @FocusState private var focused: Bool
     @State private var clipHasCode = false
     @State private var glow = false
+    @State private var pasted = false
+    /// Only reach into the clipboard once per appearance, so iOS never nags.
+    @State private var autoGrab = true
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.openURL) private var openURL
 
@@ -296,7 +299,12 @@ struct CodeField: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { focused = true }
             checkClipboard()
         }
-        .onChange(of: scenePhase) { _, p in if p == .active { checkClipboard() } }
+        .onChange(of: scenePhase) { _, p in
+            if p == .active {
+                autoGrab = true          // coming back from Mail: try once more
+                checkClipboard()
+            }
+        }
     }
 
     /// A big, friendly paste button that lights up when a code is sitting on the clipboard
@@ -335,7 +343,11 @@ struct CodeField: View {
                     }
                 }
             }
-            if clipHasCode {
+            if pasted {
+                Label(tr("لصقناه لك ✓", "Pasted for you ✓"), systemImage: "checkmark.circle.fill")
+                    .font(Theme.font(12, .bold)).foregroundStyle(Theme.ok)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            } else if clipHasCode {
                 Label(tr("لقينا كود منسوخ — اضغط «لصق»", "A copied code is ready — tap Paste"), systemImage: "sparkles")
                     .font(Theme.font(12, .semibold)).foregroundStyle(tint)
                     .transition(.opacity.combined(with: .move(edge: .top)))
@@ -353,27 +365,30 @@ struct CodeField: View {
         if let u = URL(string: s) { openURL(u) }
     }
 
+    /// Looks for a copied code and fills it in by itself.
+    /// `detectPatterns` is silent, so we only reach for the text when a number really is on the
+    /// clipboard — and only once per appearance, so iOS never nags.
     private func checkClipboard() {
-        guard UIPasteboard.general.hasStrings else { clipHasCode = false; return }
+        guard code.count < length, UIPasteboard.general.hasStrings else {
+            if clipHasCode { clipHasCode = false }
+            return
+        }
         UIPasteboard.general.detectPatterns(for: [UIPasteboard.DetectionPattern.number]) { result in
             let has = (try? result.get())?.contains(UIPasteboard.DetectionPattern.number) ?? false
-            DispatchQueue.main.async { withAnimation { clipHasCode = has && code.count < length } }
+            DispatchQueue.main.async {
+                withAnimation { clipHasCode = has }
+                guard has, autoGrab else { return }
+                autoGrab = false
+                // Reading the string keeps leading zeros, which a numeric value would drop.
+                guard let raw = UIPasteboard.general.string else { return }
+                let digits = TOTP.westernDigits(raw).filter { $0.isASCII && $0.isNumber }
+                guard digits.count == length, code.count < length else { return }
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.6)) { code = digits }
+                clipHasCode = false
+                pasted = true
+                Haptics.success()
+            }
         }
-    }
-
-    /// Picks the code out of whatever was copied (e.g. "Your code: 482 913").
-    static func extractCode(_ text: String, max: Int) -> String {
-        let latin = TOTP.westernDigits(text)
-        var runs: [String] = []
-        var cur = ""
-        for ch in latin {
-            if ch.isASCII && ch.isNumber { cur.append(ch) }
-            else if ch == " " || ch == "-" { continue }
-            else { if !cur.isEmpty { runs.append(cur); cur = "" } }
-        }
-        if !cur.isEmpty { runs.append(cur) }
-        if let best = runs.first(where: { $0.count >= 6 && $0.count <= max }) { return best }
-        return String(runs.joined().prefix(max))
     }
 }
 

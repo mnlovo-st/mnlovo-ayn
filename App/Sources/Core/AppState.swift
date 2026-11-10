@@ -187,10 +187,10 @@ final class AppState: ObservableObject {
 
     /// Builds the plain-text parcel handed over by the heartbeat feature. Only what the user ticked.
     func legacyBundle(_ sel: LegacyService.Selection) -> String {
-        var out = ["MNLOVO SAVER — \(tr("أمانة", "Legacy parcel"))",
+        var out = ["MNLOVO SAVER — \(tr("وصية وأمانة", "Will and legacy"))",
                    "\(tr("أُعدّت في", "Prepared")): \(Fmt.date(Date()))", ""]
         if !sel.message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            out.append(contentsOf: [tr("رسالة منّي:", "A message from me:"), sel.message, ""])
+            out.append(contentsOf: ["══ \(tr("الوصية", "The will")) ══", sel.message, ""])
         }
         if sel.accounts && !accounts.isEmpty {
             out.append("══ \(tr("الحسابات", "Accounts")) (\(accounts.count)) ══")

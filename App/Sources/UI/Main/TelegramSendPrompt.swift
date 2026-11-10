@@ -13,6 +13,8 @@ struct TelegramSendPrompt: View {
     @State private var sending = false
     @State private var dontAsk = false
     @FocusState private var keyFocus: AYNFieldID?
+    @AppStorage("intro.cipher.seen") private var cipherIntroSeen = false
+    @State private var showCipherIntro = false
 
     enum Mode: Hashable { case normal, cipher }
     private let blue = TelegramService.blue
@@ -25,7 +27,10 @@ struct TelegramSendPrompt: View {
                     SheetHeader(title: tr("إرسال للتيليجرام؟", "Send to Telegram?")) { finish(send: false) }
                     header
                     modePicker
-                    if mode == .cipher { cipherPicker }
+                    if mode == .cipher {
+                        cipherPicker
+                        CipherPreview(plain: previewSource, cipher: cipher, key: key)
+                    }
                     Toggle(isOn: $dontAsk) {
                         Text(tr("لا تسألني بعدها (أرسل تلقائياً)", "Don't ask again (send automatically)"))
                             .font(Theme.font(13, .semibold))
@@ -43,6 +48,22 @@ struct TelegramSendPrompt: View {
             }
             .scrollDismissesKeyboard(.interactively)
         }
+        .fullScreenCover(isPresented: $showCipherIntro) {
+            CipherIntro {
+                cipherIntroSeen = true
+                showCipherIntro = false
+                // They've just watched why it matters, so start them on the ciphered choice.
+                withAnimation(.spring(response: 0.35)) { mode = .cipher }
+            }
+        }
+    }
+
+    /// A short, non-secret stand-in for the live preview: the real password is never rendered here.
+    private var previewSource: String {
+        var parts = [account.service]
+        if !account.login.isEmpty { parts.append(account.login) }
+        parts.append(String(repeating: "•", count: max(6, min(12, account.password.count))))
+        return parts.joined(separator: " · ")
     }
 
     private var header: some View {
@@ -65,6 +86,21 @@ struct TelegramSendPrompt: View {
                    tr("رسالة مرتّبة ومشوّشة، تنكشف باللمس.", "A tidy message, blurred, revealed on tap."))
             choice(.cipher, "lock.shield.fill", tr("شفّره قبل الإرسال", "Encrypt it first"),
                    tr("يتحوّل لطلاسم، ما يفكها إلا «أداة التشفير» في التطبيق.", "Turns into gibberish only the app's Cipher tool can read."))
+            Button {
+                Haptics.light()
+                showCipherIntro = true
+            } label: {
+                Label(tr("وش يعني تشفير؟ شوف الشرح", "What does ciphering mean? Watch the walkthrough"),
+                      systemImage: "play.circle.fill")
+                    .font(Theme.font(12, .bold)).foregroundStyle(Theme.accent3)
+            }
+            .buttonStyle(PressScale())
+        }
+        .onAppear {
+            // The very first time this prompt appears, explain the idea before asking them to choose.
+            if !cipherIntroSeen {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { showCipherIntro = true }
+            }
         }
     }
 

@@ -292,7 +292,7 @@ struct RemindersIntro: View {
     @State private var scene = 0
     @State private var step = 0         // per-scene animation beat
     @State private var auto = true
-    private let count = 4
+    private let count = 5
 
     private var captions: [(String, String)] {
         [(tr("تضيف موعد أو مهمة أو واجب", "Add an appointment, task or homework"),
@@ -302,7 +302,10 @@ struct RemindersIntro: View {
          (tr("الروتين اليومي له طريقته", "Daily routines have their own style"),
           tr("تختار الأيام والساعة، كل أسبوع أو هالأسبوع بس، وطريقة التذكير: لطيف، مدرّب، منبّه أو هادي. وتجمع سلسلة 🔥", "Pick days and time, weekly or just this week, and a style: gentle, coach, alarm or quiet. Build a streak 🔥")),
          (tr("تخلصها؟ أقفلها بضغطة", "Done? Close it in one tap"),
-          tr("من الإشعار نفسه أو من التطبيق: «✓ هيه خلصتها» وأوقف التذكير.", "From the notification or the app: “✓ Yes, done” and I stop."))]
+          tr("من الإشعار نفسه أو من التطبيق: «✓ هيه خلصتها» وأوقف التذكير.", "From the notification or the app: “✓ Yes, done” and I stop.")),
+         (tr("وأحاسب لك اشتراكاتك", "And I keep your subscriptions in line"),
+          tr("تحط سعر كل اشتراك ودورته، وأقول لك كم يكلّفك بالشهر، وأنبّهك قبل التجديد بوقت يكفي تلغيه.",
+             "Enter each subscription's price and cycle; I tell you the real monthly cost and warn you early enough to cancel."))]
     }
 
     var body: some View {
@@ -353,6 +356,16 @@ struct RemindersIntro: View {
                 .padding(.bottom, 16)
             }
         }
+        .gesture(
+            DragGesture(minimumDistance: 24).onEnded { g in
+                guard abs(g.translation.width) > abs(g.translation.height) else { return }
+                auto = false
+                // In Arabic the pages read right-to-left, so a drag to the right means "next".
+                let forward = AppLanguage.current.isRTL ? g.translation.width > 0 : g.translation.width < 0
+                if forward, scene < count - 1 { go(scene + 1) }
+                else if !forward, scene > 0 { go(scene - 1) }
+            }
+        )
         .animation(.spring(response: 0.5, dampingFraction: 0.85), value: scene)
         .task(id: scene) { await play() }
     }
@@ -369,7 +382,7 @@ struct RemindersIntro: View {
 
     private func play() async {
         step = 0
-        let beats = [4, 6, 5, 4][scene]
+        let beats = [4, 6, 5, 4, 5][scene]
         for b in 1...beats {
             await pause(scene == 1 ? 0.55 : 0.7)
             if Task.isCancelled { return }
@@ -390,7 +403,8 @@ struct RemindersIntro: View {
                 case 0: addScene
                 case 1: timelineScene
                 case 2: routineScene
-                default: doneScene
+                case 3: doneScene
+                default: subsScene
                 }
             }
             .padding(.horizontal, 14).padding(.top, 34).padding(.bottom, 16)
@@ -557,5 +571,59 @@ struct RemindersIntro: View {
             }
             Spacer()
         }
+    }
+
+    /// Scene 5 — subscriptions, which now live in this section: the real monthly cost, then the
+    /// warning that lands while there's still time to cancel.
+    private var subsScene: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Text(tr("اشتراكاتك", "Your subscriptions")).font(Theme.font(13, .heavy)).foregroundStyle(Theme.text)
+            subRow("Netflix", tr("شهري", "monthly"), "56", on: step >= 1)
+            subRow("iCloud", tr("شهري", "monthly"), "11", on: step >= 2)
+            subRow("Adobe", tr("سنوي", "yearly"), "899", on: step >= 3)
+            if step >= 4 {
+                HStack(spacing: 6) {
+                    Image(systemName: "sum").font(.system(size: 11, weight: .bold)).foregroundStyle(Theme.accent)
+                    Text(tr("يكلّفك بالشهر", "Costs you monthly")).font(Theme.font(10, .bold)).foregroundStyle(Theme.sub)
+                    Spacer()
+                    Text(tr("‏141 درهم", "141 AED")).font(Theme.font(12, .heavy)).foregroundStyle(Theme.text)
+                }
+                .padding(8)
+                .background(RoundedRectangle(cornerRadius: 10).fill(Theme.surfaceHi))
+                .transition(.scale(scale: 0.8).combined(with: .opacity))
+            }
+            Spacer()
+            if step >= 5 {
+                HStack(spacing: 7) {
+                    Image(systemName: "bell.badge.fill").font(.system(size: 12, weight: .bold)).foregroundStyle(Theme.warn)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(tr("Adobe يتجدد بعد ٥ أيام", "Adobe renews in 5 days"))
+                            .font(Theme.font(10, .heavy)).foregroundStyle(Theme.text)
+                        Text(tr("تبي تلغيه قبل ما يُخصم؟", "Cancel before it's charged?"))
+                            .font(Theme.font(9)).foregroundStyle(Theme.sub)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(8)
+                .background(RoundedRectangle(cornerRadius: 12).fill(.ultraThinMaterial))
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+    }
+
+    private func subRow(_ name: String, _ cycle: String, _ price: String, on: Bool) -> some View {
+        HStack(spacing: 7) {
+            RoundedRectangle(cornerRadius: 7).fill(Theme.surfaceHi).frame(width: 22, height: 22)
+                .overlay(Text(String(name.prefix(1))).font(Theme.font(10, .heavy)).foregroundStyle(Theme.accent))
+            VStack(alignment: .leading, spacing: 1) {
+                Text(name).font(Theme.font(10, .bold)).foregroundStyle(Theme.text)
+                Text(cycle).font(Theme.font(8)).foregroundStyle(Theme.faint)
+            }
+            Spacer(minLength: 0)
+            Text(price).font(Theme.font(11, .heavy)).foregroundStyle(Theme.sub)
+        }
+        .padding(7)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Theme.surface))
+        .opacity(on ? 1 : 0.3)
     }
 }

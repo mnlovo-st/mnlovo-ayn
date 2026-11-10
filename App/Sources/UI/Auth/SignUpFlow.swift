@@ -280,7 +280,7 @@ struct SignUpFlow: View {
             TwoFactorSetupCard(totp: input.totp)
             Text(tr("اكتب الرمز اللي يطلع لك:", "Enter the code it shows:"))
                 .font(Theme.font(15, .semibold)).foregroundStyle(Theme.text)
-            CodeField(code: $totpCode, autofill: false)
+            CodeField(code: $totpCode)
                 .onChange(of: totpCode) { _, v in if v.count == 6 { next() } }
         }
     }
@@ -346,13 +346,13 @@ struct SignUpFlow: View {
         }
     }
 
-    /// Introduces the heartbeat; the actual trustee is picked later, once Telegram is linked.
+    /// Introduces the after-death delivery; the actual trustee is picked later, once Telegram is linked.
     private var legacyStep: some View {
         VStack(spacing: 14) {
-            StepHeader(icon: "heart.text.square.fill",
-                       title: tr("نبض الحياة", "Heartbeat"),
-                       subtitle: tr("لو انقطعت أخبارك مدة طويلة، بياناتك ما تضيع — توصل لشخص واحد تختاره أنت.",
-                                    "If you go silent for a long time, your data isn't lost — it reaches one person you choose."))
+            StepHeader(icon: "scroll.fill",
+                       title: tr("بعد وفاتي", "After I'm gone"),
+                       subtitle: tr("لو توفّيت — الله لا يبلانا — وصيتك وبياناتك ما تضيع. توصل لشخص واحد تختاره أنت، وبعد ما يتأكد التطبيق إنك ما عدت موجود.",
+                                    "If you die — God forbid — your will and your data aren't lost. They reach one person you choose, and only after the app has made sure you're gone."))
             LegacyExplainer()
             Toggle(isOn: $wantsLegacy) {
                 VStack(alignment: .leading, spacing: 3) {

@@ -13,7 +13,6 @@ const admin = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY
   auth: { persistSession: false },
 });
 const SELF_URL = `${SUPABASE_URL}/functions/v1/saver-telegram`;
-const LINE = "━━━━━━━━━━━━━━";
 const cors = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, apikey, content-type",
@@ -92,10 +91,10 @@ const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replac
 
 function welcome(kind: string, role = "owner") {
   if (role === "friend") {
-    return `✅ <b>تم الربط</b>\n${LINE}\nصاحب حساب MNLOVO SAVER شاركك تحديثاته، وبتوصلك هنا مرتّبة ومنسّقة.\n${LINE}\n<i>MNLOVO SAVER · © MNLOVO 2026</i>`;
+    return `✅ <b>تم الربط</b>\n\nصاحب حساب MNLOVO SAVER شاركك تحديثاته، وبتوصلك هنا مرتّبة ومنسّقة.\n\n<i>MNLOVO SAVER · © MNLOVO 2026</i>`;
   }
   const where = kind === "channel" ? "هذي القناة" : kind === "private" ? "هنا" : "هذا القروب";
-  return `✅ <b>تم ربط MNLOVO SAVER</b>\n${LINE}\nمن الحين أي شي تضيفه في التطبيق بيوصل ${where} مرتّب ومنسّق.\nالنصوص تجي مشوّشة، المسها عشان تبين.\n${LINE}\n<i>MNLOVO SAVER · © MNLOVO 2026</i>`;
+  return `✅ <b>تم ربط MNLOVO SAVER</b>\n\nمن الحين أي شي تضيفه في التطبيق بيوصل ${where} مرتّب ومنسّق.\nالنصوص تجي مشوّشة، المسها عشان تبين.\n\n<i>MNLOVO SAVER · © MNLOVO 2026</i>`;
 }
 
 function chatTitle(chat: Record<string, any>) {
@@ -107,7 +106,7 @@ async function alreadyLinked(cfg: Config, chatId: number, fromId?: number) {
   const on = (data ?? []).some((t: any) => t.enabled);
   await tg(cfg, "sendMessage", {
     chat_id: chatId, parse_mode: "HTML",
-    text: `✅ <b>مربوط من قبل</b>\n${LINE}\nهالمحادثة مربوطة بـ MNLOVO SAVER ${on ? "والنشر شغّال 🟢" : "بس النشر موقّف ⏸️"}.\nما تحتاج تسوي شي ثاني.\n\nتبي تتحكم؟ اضغط الزر تحت أو اكتب /menu`,
+    text: `✅ <b>مربوط من قبل</b>\n\nهالمحادثة مربوطة بـ MNLOVO SAVER ${on ? "والنشر شغّال 🟢" : "بس النشر موقّف ⏸️"}.\nما تحتاج تسوي شي ثاني.\n\nتبي تتحكم؟ اضغط الزر تحت أو اكتب /menu`,
     reply_markup: { inline_keyboard: [[{ text: "⚙️ التحكم", callback_data: "tg:menu" }]] },
   });
 }
@@ -137,7 +136,7 @@ async function linkChat(cfg: Config, userId: string, chat: Record<string, any>, 
   return "new";
 }
 
-const FOOT = `${LINE}\n<i>MNLOVO SAVER · © MNLOVO 2026</i>`;
+const FOOT = `\n<i>MNLOVO SAVER · © MNLOVO 2026</i>`;
 const SUPPORT_ROW = [
   { text: "💬 الدعم — تيليجرام", url: "https://t.me/bscoolvi" },
   { text: "📸 إنستغرام", url: "https://instagram.com/4saf" },
@@ -163,7 +162,7 @@ async function sendMenu(cfg: Config, chatId: number, fromId?: number, editId?: n
   const ts = await targetsOf(chatId);
   if (!ts.length) {
     await tg(cfg, "sendMessage", { chat_id: chatId, parse_mode: "HTML",
-      text: `👋 <b>هالمحادثة مو مربوطة</b>\n${LINE}\nافتح تطبيق MNLOVO SAVER ← الإعدادات ← تيليجرام ← «ربط تيليجرام بضغطة».\n${FOOT}`,
+      text: `👋 <b>هالمحادثة مو مربوطة</b>\n\nافتح تطبيق MNLOVO SAVER ← الإعدادات ← تيليجرام ← «ربط تيليجرام بضغطة».\n${FOOT}`,
       reply_markup: { inline_keyboard: [SUPPORT_ROW] } });
     return;
   }
@@ -172,11 +171,14 @@ async function sendMenu(cfg: Config, chatId: number, fromId?: number, editId?: n
   const kb: any[][] = [[{ text: t.enabled ? "⏸️ وقّف النشر هنا" : "▶️ شغّل النشر هنا", callback_data: "tg:toggle" }]];
   if (owner) {
     kb.push([{ text: "👤 أضف شخص ثاني يستقبل", callback_data: "tg:share" }]);
-    if (t.type === "private") kb.push([{ text: "🆘 مساعدة في استرجاع الحساب", callback_data: "tg:recover" }]);
+    if (t.type === "private") {
+      kb.push([{ text: "🧪 جرّب رسالة بعد الوفاة", callback_data: "tg:legacy_test" }]);
+      kb.push([{ text: "🆘 مساعدة في استرجاع الحساب", callback_data: "tg:recover" }]);
+    }
   }
   kb.push([{ text: t.role === "friend" ? "🚪 وقّف استقبالي نهائياً" : "🔌 فصل البوت من هنا", callback_data: "tg:unlink" }]);
   kb.push(SUPPORT_ROW);
-  const text = `⚙️ <b>التحكم بـ MNLOVO SAVER</b>\n${LINE}\nالحالة: ${t.enabled ? "🟢 النشر شغّال" : "⏸️ النشر موقّف"}\nالنوع: ${
+  const text = `⚙️ <b>التحكم بـ MNLOVO SAVER</b>\n\nالحالة: ${t.enabled ? "🟢 النشر شغّال" : "⏸️ النشر موقّف"}\nالنوع: ${
     t.type === "channel" ? "قناة" : t.type === "private" ? (t.role === "friend" ? "شخص مشارَك" : "محادثتك الخاصة") : "قروب"}\n${FOOT}`;
   if (editId) await tg(cfg, "editMessageText", { chat_id: chatId, message_id: editId, text, parse_mode: "HTML", reply_markup: { inline_keyboard: kb } });
   else await tg(cfg, "sendMessage", { chat_id: chatId, text, parse_mode: "HTML", reply_markup: { inline_keyboard: kb } });
@@ -193,8 +195,24 @@ async function legacyAlive(cfg: Config, userId: string, chatId?: number) {
     .eq("user_id", userId);
   if (chatId) {
     await tg(cfg, "sendMessage", { chat_id: chatId, parse_mode: "HTML",
-      text: `\u2764\ufe0f <b>\u0627\u0644\u062d\u0645\u062f\u0644\u0644\u0647</b>\n${LINE}\n\u0633\u062c\u0651\u0644\u0646\u0627 \u0625\u0646\u0643 \u0628\u062e\u064a\u0631 \u2713 \u0648\u0631\u062c\u0639 \u0627\u0644\u0639\u062f\u0627\u062f \u0645\u0646 \u0627\u0644\u0623\u0648\u0644.\n${FOOT}` });
+      text: `❤️ <b>الحمدلله</b>
+
+سجّلنا إنك بخير ✓ ورجع العدّاد من الأول.
+
+خلّك تفتح التطبيق كل فترة وما بنزعجك.${FOOT}` });
   }
+}
+
+/** The rehearsal message the trustee gets — worded so it can never be mistaken for the real one. */
+async function legacyTest(cfg: Config, chatId: number) {
+  await tg(cfg, "sendMessage", { chat_id: chatId, parse_mode: "HTML",
+    text: `🧪 <b>تجربة — ما صار شي</b>
+
+هذي رسالة تجريبية طلبها صاحب الحساب بنفسه، عشان يتأكد إنها توصلك.
+
+إنت الأمين على بياناته ووصيته إذا توفّى. لو صارت الرسالة الحقيقية يوم، بتكون واضحة وما فيها كلمة «تجربة».
+
+ما تحتاج تسوي أي شي الحين 🤍${FOOT}` });
 }
 
 /** Splits a long bundle into Telegram-sized chunks. */
@@ -214,11 +232,20 @@ function chunk(text: string, size = 3500): string[] {
 async function releaseLegacy(cfg: Config, row: any) {
   if (!row.recipient_chat_id || !row.bundle) return;
   const { data: reg } = await admin.from("saver_accounts").select("username, email_hint").eq("user_id", row.user_id).maybeSingle();
-  const who = reg?.username ? esc(reg.username) : (reg?.email_hint ?? "");
+  const who = reg?.username ? esc(reg.username) : (reg?.email_hint || "صاحب الحساب");
   await tg(cfg, "sendMessage", { chat_id: row.recipient_chat_id, parse_mode: "HTML",
-    text: `\ud83d\udd4a\ufe0f <b>\u0623\u0645\u0627\u0646\u0629 \u0645\u0646 MNLOVO SAVER</b>\n${LINE}\n\u0635\u0627\u062d\u0628 \u0627\u0644\u062d\u0633\u0627\u0628 ${who} \u0627\u062e\u062a\u0627\u0631\u0643 \u0623\u0645\u064a\u0646\u0627\u064b \u0639\u0644\u0649 \u0628\u064a\u0627\u0646\u0627\u062a\u0647.\n\u0645\u0627 \u0641\u062a\u062d \u0627\u0644\u062a\u0637\u0628\u064a\u0642 \u0645\u0646 ${row.interval_days} \u064a\u0648\u0645\u060c \u0648\u0645\u0627 \u0631\u062f\u0651 \u0639\u0644\u0649 \u0631\u0633\u0627\u0626\u0644\u0646\u0627 \u0637\u0648\u0627\u0644 ${row.grace_days} \u0623\u064a\u0627\u0645.\n\n\u062a\u062d\u062a \u0628\u064a\u0627\u0646\u0627\u062a\u0647 \u0632\u064a \u0645\u0627 \u062a\u0631\u0643\u0647\u0627. \u062d\u0627\u0641\u0638 \u0639\u0644\u064a\u0647\u0627.\n${FOOT}` });
+    text: `🕊️ <b>أمانة ${who}</b>
+
+${who} اختارك أميناً على بياناته ووصيته بعد وفاته.
+
+ما فتح التطبيق من ${row.interval_days} يوم، وسألناه كل يوم طوال ${row.grace_days} أيام وما رد.
+عشان كذا نسلّمك أمانته الحين.
+
+تحت بياناته ووصيته زي ما تركها. احتفظ فيها ولا تعطيها لأحد 🤲
+
+<i>إذا تعرف إنه بخير، خبّره يفتح التطبيق وبنوقف كل شي.</i>${FOOT}` });
   for (const part of chunk(row.bundle)) {
-    await tg(cfg, "sendMessage", { chat_id: row.recipient_chat_id, text: `<pre>${esc(part)}</pre>`, parse_mode: "HTML" });
+    await tg(cfg, "sendMessage", { chat_id: row.recipient_chat_id, text: esc(part), parse_mode: "HTML" });
   }
   await admin.from("saver_legacy").update({ state: "released", released_at: new Date().toISOString() }).eq("user_id", row.user_id);
   // Tell the owner too, in case they are simply away.
@@ -226,7 +253,11 @@ async function releaseLegacy(cfg: Config, row: any) {
     .eq("user_id", row.user_id).eq("role", "owner").eq("type", "private").limit(1).maybeSingle();
   if (own) {
     await tg(cfg, "sendMessage", { chat_id: own.chat_id, parse_mode: "HTML",
-      text: `\u2139\ufe0f <b>\u0627\u0646\u0631\u0633\u0644\u062a \u0627\u0644\u0623\u0645\u0627\u0646\u0629</b>\n${LINE}\n\u0645\u0627 \u0648\u0635\u0644\u0646\u0627 \u0645\u0646\u0643 \u0631\u062f\u060c \u0641\u0633\u0644\u0651\u0645\u0646\u0627 \u0628\u064a\u0627\u0646\u0627\u062a\u0643 \u0644\u0640 ${esc(row.recipient_name || "\u0627\u0644\u0634\u062e\u0635 \u0627\u0644\u0644\u064a \u0627\u062e\u062a\u0631\u062a\u0647")}.\n\u0644\u0648 \u0647\u0630\u0627 \u0635\u0627\u0631 \u0628\u0627\u0644\u063a\u0644\u0637\u060c \u0627\u0641\u062a\u062d \u0627\u0644\u062a\u0637\u0628\u064a\u0642 \u0648\u0639\u062f\u0651\u0644 \u0627\u0644\u0625\u0639\u062f\u0627\u062f\u0627\u062a.\n${FOOT}` });
+      text: `ℹ️ <b>سلّمنا أمانتك</b>
+
+ما وصلنا منك رد طوال المدة اللي حددتها، فسلّمنا بياناتك ووصيتك لـ ${esc(row.recipient_name || "الشخص اللي اخترته")}.
+
+لو هذا صار بالغلط: افتح التطبيق ← «بعد وفاتي» ← وقّف الخاصية أو عدّل المدة، وغيّر كلمات سرّك المهمة.${FOOT}` });
   }
 }
 
@@ -251,10 +282,16 @@ async function runLegacyCron(cfg: Config) {
     if (!own) continue;
     const left = Math.max(0, Math.ceil(((row.interval_days + row.grace_days) * DAY - quiet) / DAY));
     await tg(cfg, "sendMessage", { chat_id: own.chat_id, parse_mode: "HTML",
-      text: `\ud83e\udec0 <b>\u0637\u0645\u0651\u0646\u0651\u0627 \u0639\u0646\u0643</b>\n${LINE}\n\u0635\u0627\u0631 \u0644\u0643 ${row.interval_days} \u064a\u0648\u0645 \u0645\u0627 \u0641\u062a\u062d\u062a MNLOVO SAVER.\n\u0627\u0636\u063a\u0637 \u0627\u0644\u0632\u0631 \u062a\u062d\u062a \u0639\u0634\u0627\u0646 \u0646\u0639\u0631\u0641 \u0625\u0646\u0643 \u0628\u062e\u064a\u0631.\n\n\u23f3 \u0628\u0627\u0642\u064a ${left} \u064a\u0648\u0645\u060c \u0648\u0628\u0639\u062f\u0647\u0627 \u062a\u0646\u0633\u0644\u0651\u0645 \u0623\u0645\u0627\u0646\u062a\u0643 \u0644\u0640 ${esc(row.recipient_name || "\u0627\u0644\u0634\u062e\u0635 \u0627\u0644\u0644\u064a \u0627\u062e\u062a\u0631\u062a\u0647")}.\n${FOOT}`,
+      text: `🫀 <b>إنت بخير؟</b>
+
+صار لك ${row.interval_days} يوم ما فتحت MNLOVO SAVER، وخاصية «بعد وفاتي» شغّالة.
+
+اضغط الزر تحت وبس — عشان نعرف إنك موجود.
+
+⏳ باقي ${left} يوم، وبعدها نسلّم بياناتك ووصيتك لـ ${esc(row.recipient_name || "الشخص اللي اخترته")}.${FOOT}`,
       reply_markup: { inline_keyboard: [
-        [{ text: "\u2764\ufe0f \u0623\u0646\u0627 \u0628\u062e\u064a\u0631", callback_data: "tg:alive" }],
-        [{ text: "\u23f8\ufe0f \u0623\u0648\u0642\u0650\u0641 \u0627\u0644\u062e\u0627\u0635\u064a\u0629", callback_data: "tg:legacy_off" }],
+        [{ text: "❤️ أنا بخير", callback_data: "tg:alive" }],
+        [{ text: "⏸️ أوقِف الخاصية", callback_data: "tg:legacy_off" }],
       ] } });
     await admin.from("saver_legacy").update({
       state: "asking", asked_at: new Date().toISOString(), asked_count: (row.asked_count ?? 0) + 1,
@@ -294,7 +331,7 @@ async function handleCallback(cfg: Config, q: Record<string, any>) {
       const link = `https://t.me/${cfg.bot_username}?start=${code}`;
       await answer();
       await tg(cfg, "sendMessage", { chat_id: chatId, parse_mode: "HTML",
-        text: `👤 <b>رابط لشخص ثاني</b>\n${LINE}\nأرسل هالرابط للشخص اللي تبيه يستقبل تحديثاتك. أول ما يفتحه ويضغط «ابدأ» ينربط.\n\n<code>${link}</code>\n\n⏳ صالح لمدة ٣٠ دقيقة ولمرة وحدة.\n${FOOT}`,
+        text: `👤 <b>رابط لشخص ثاني</b>\n\nأرسل هالرابط للشخص اللي تبيه يستقبل تحديثاتك. أول ما يفتحه ويضغط «ابدأ» ينربط.\n\n<code>${link}</code>\n\n⏳ صالح لمدة ٣٠ دقيقة ولمرة وحدة.\n${FOOT}`,
         reply_markup: { inline_keyboard: [
           [{ text: "📤 أرسل الرابط", url: `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent("اضغط الرابط وبعدين «ابدأ» عشان توصلك تحديثات MNLOVO SAVER")}` }],
           [{ text: "↩️ رجوع للتحكم", callback_data: "tg:menu" }],
@@ -306,8 +343,25 @@ async function handleCallback(cfg: Config, q: Record<string, any>) {
       const { data: reg } = await admin.from("saver_accounts").select("email_hint, username").eq("user_id", t.user_id).maybeSingle();
       await answer();
       await tg(cfg, "sendMessage", { chat_id: chatId, parse_mode: "HTML",
-        text: `🆘 <b>مساعدة في استرجاع الحساب</b>\n${LINE}\nالحساب المربوط هنا:\n👤 ${reg?.username ? esc(reg.username) : "—"}\n✉️ ${reg?.email_hint ?? "—"}\n\n<b>إذا نسيت كلمة المرور:</b>\n١. افتح التطبيق ← «نسيت كلمة المرور؟»\n٢. حط الإيميل ورقم الهاتف وتاريخ الميلاد\n٣. حط الكود اللي يوصلك على الإيميل\n٤. رمز التحقق المتغير + Face ID، أو مفتاح الاسترجاع (٦ مجموعات)\n٥. سوّ كلمة مرور جديدة ✓\n\n<b>جوال جديد؟</b> «عندي حساب، تسجيل دخول» ← بالإيميل ← كلمة المرور أو مفتاح الاسترجاع.\n\n🔒 البوت يساعدك بس، ما يقدر يفتح خزنتك ولا يغيّر كلمة المرور — بياناتك مشفّرة في جوالك.\nما نطلب منك أبداً كلمة المرور أو مفتاح الاسترجاع.\n${FOOT}`,
+        text: `🆘 <b>مساعدة في استرجاع الحساب</b>\n\nالحساب المربوط هنا:\n👤 ${reg?.username ? esc(reg.username) : "—"}\n✉️ ${reg?.email_hint ?? "—"}\n\n<b>إذا نسيت كلمة المرور:</b>\n١. افتح التطبيق ← «نسيت كلمة المرور؟»\n٢. حط الإيميل ورقم الهاتف وتاريخ الميلاد\n٣. حط الكود اللي يوصلك على الإيميل\n٤. رمز التحقق المتغير + Face ID، أو مفتاح الاسترجاع (٦ مجموعات)\n٥. سوّ كلمة مرور جديدة ✓\n\n<b>جوال جديد؟</b> «عندي حساب، تسجيل دخول» ← بالإيميل ← كلمة المرور أو مفتاح الاسترجاع.\n\n🔒 البوت يساعدك بس، ما يقدر يفتح خزنتك ولا يغيّر كلمة المرور — بياناتك مشفّرة في جوالك.\nما نطلب منك أبداً كلمة المرور أو مفتاح الاسترجاع.\n${FOOT}`,
         reply_markup: { inline_keyboard: [SUPPORT_ROW, [{ text: "↩️ رجوع للتحكم", callback_data: "tg:menu" }]] } });
+      return;
+    }
+    case "tg:legacy_test": {
+      if (!owner) return await answer("بس صاحب الحساب.", true);
+      const { data: row } = await admin.from("saver_legacy")
+        .select("recipient_chat_id, recipient_name, enabled, bundle").eq("user_id", t.user_id).maybeSingle();
+      if (!row?.recipient_chat_id) {
+        return await answer("ما عيّنت أمين بعد. افتح التطبيق ← بعد وفاتي ← اختر الشخص.", true);
+      }
+      await answer("طرشناها ✓");
+      await legacyTest(cfg, row.recipient_chat_id);
+      await tg(cfg, "sendMessage", { chat_id: chatId, parse_mode: "HTML",
+        text: `🧪 <b>وصلت التجربة</b>
+
+طرشنا رسالة تجريبية لـ ${esc(row.recipient_name || "الأمين")}، وواضح فيها إنها تجربة بس.
+${row.enabled ? (row.bundle ? "الخاصية شغّالة والأمانة محفوظة ✓" : "⚠️ الخاصية شغّالة بس ما حفظت الأمانة بعد — افتح التطبيق واضغط «حدّث الأمانة».") : "⏸️ الخاصية موقّفة حالياً، فما بينرسل شي فعلاً."}${FOOT}`,
+        reply_markup: { inline_keyboard: [[{ text: "↩️ رجوع للتحكم", callback_data: "tg:menu" }]] } });
       return;
     }
     case "tg:unlink": {
@@ -343,7 +397,7 @@ async function handleUpdate(cfg: Config, u: Record<string, any>) {
       if (m.chat.type === "private") {
         await tg(cfg, "sendMessage", {
           chat_id: m.chat.id, parse_mode: "HTML",
-          text: `👋 <b>أهلاً فيك في MNLOVO SAVER</b>\n${LINE}\nعشان تربط حسابك:\n١. افتح تطبيق MNLOVO SAVER\n٢. الإعدادات ← تيليجرام\n٣. اضغط «ربط تيليجرام بضغطة»\n\nوبس! التطبيق يرجعك هنا ويربط لحاله.\n${LINE}\n<i>MNLOVO SAVER · © MNLOVO 2026</i>`,
+          text: `👋 <b>أهلاً فيك في MNLOVO SAVER</b>\n\nعشان تربط حسابك:\n١. افتح تطبيق MNLOVO SAVER\n٢. الإعدادات ← تيليجرام\n٣. اضغط «ربط تيليجرام بضغطة»\n\nوبس! التطبيق يرجعك هنا ويربط لحاله.\n\n<i>MNLOVO SAVER · © MNLOVO 2026</i>`,
         });
       }
       return;
@@ -362,8 +416,21 @@ async function handleUpdate(cfg: Config, u: Record<string, any>) {
         user_id: link.user_id, recipient_chat_id: m.chat.id, recipient_name: name, updated_at: new Date().toISOString(),
       }, { onConflict: "user_id" });
       await admin.from("saver_tg_links").delete().eq("code", code);
+      const { data: whoReg } = await admin.from("saver_accounts").select("username").eq("user_id", link.user_id).maybeSingle();
+      const whoName = whoReg?.username ? esc(whoReg.username) : "واحد من مستخدمي MNLOVO SAVER";
       await tg(cfg, "sendMessage", { chat_id: m.chat.id, parse_mode: "HTML",
-        text: `\ud83e\udd1d <b>\u0635\u0631\u062a \u0627\u0644\u0623\u0645\u064a\u0646</b>\n${LINE}\n\u0648\u0627\u062d\u062f \u0645\u0646 \u0645\u0633\u062a\u062e\u062f\u0645\u064a MNLOVO SAVER \u0627\u062e\u062a\u0627\u0631\u0643 \u0623\u0645\u064a\u0646\u0627\u064b \u0639\u0644\u0649 \u0628\u064a\u0627\u0646\u0627\u062a\u0647.\n\n\u0645\u0627 \u0628\u064a\u0648\u0635\u0644\u0643 \u0634\u064a \u0627\u0644\u062d\u064a\u0646. \u0628\u0633 \u0625\u0630\u0627 \u0627\u0646\u0642\u0637\u0639\u062a \u0623\u062e\u0628\u0627\u0631\u0647 \u0645\u062f\u0629 \u0637\u0648\u064a\u0644\u0629\u060c \u0628\u0646\u0633\u0644\u0651\u0645\u0643 \u0623\u0645\u0627\u0646\u062a\u0647.\n\n\ud83e\udd32 \u0627\u062d\u062a\u0641\u0638 \u0641\u064a\u0647\u0627 \u0648\u0644\u0627 \u062a\u0639\u0637\u064a\u0647\u0627 \u0644\u0623\u062d\u062f.\n${FOOT}` });
+        text: `🤝 <b>صرت أمينه بعد وفاته</b>
+
+${whoName} اختارك الشخص اللي يستلم بياناته ووصيته إذا توفّى، لا الله لا يبلانا.
+
+<b>كيف تمشي؟</b>
+• التطبيق يراقب آخر مرة فتحه.
+• إذا انقطع مدة طويلة، يسأله أول: «إنت بخير؟»
+• إذا ما رد أبداً، يسلّمك أمانته هنا — حساباته وكلمات سرّه ووصيته.
+
+ما بيوصلك شي الحين، ولا تحتاج تسوي أي شي. بس خلّ هالمحادثة موجودة.
+
+🤲 إذا وصلتك يوم، احتفظ فيها ولا تعطيها لأحد.${FOOT}` });
       return;
     }
     const friend = link.kind === "friend" && m.chat.type === "private";
@@ -491,7 +558,20 @@ Deno.serve(async (req) => {
       if (typeof body.interval_days === "number") patch.interval_days = Math.min(365, Math.max(1, body.interval_days | 0));
       if (typeof body.grace_days === "number") patch.grace_days = Math.min(60, Math.max(1, body.grace_days | 0));
       if (typeof body.bundle === "string") { patch.bundle = body.bundle.slice(0, 200_000); patch.bundle_at = new Date().toISOString(); }
-      if (body.clear_recipient) { patch.recipient_chat_id = null; patch.recipient_name = ""; }
+      if (body.clear_recipient) {
+        // Courtesy: whoever was carrying the trust should hear that they no longer are.
+        const { data: old } = await admin.from("saver_legacy")
+          .select("recipient_chat_id").eq("user_id", user.id).maybeSingle();
+        if (old?.recipient_chat_id) {
+          later(tg(cfg, "sendMessage", { chat_id: old.recipient_chat_id, parse_mode: "HTML",
+            text: `🤍 <b>انتهت أمانتك</b>
+
+صاحب الحساب في MNLOVO SAVER ألغى تعيينك أميناً على بياناته.
+
+ما بيوصلك شي بعد الحين، ولا تحتاج تسوي أي شي. شكراً إنك كنت الشخص اللي وثّق فيه.${FOOT}` }));
+        }
+        patch.recipient_chat_id = null; patch.recipient_name = "";
+      }
       patch.last_seen = new Date().toISOString();
       await admin.from("saver_legacy").upsert(patch, { onConflict: "user_id" });
       const { data } = await admin.from("saver_legacy").select(
@@ -506,8 +586,7 @@ Deno.serve(async (req) => {
     case "legacy_test": {
       const { data: row } = await admin.from("saver_legacy").select("*").eq("user_id", user.id).maybeSingle();
       if (!row?.recipient_chat_id) return json({ error: "no_recipient" }, 400);
-      await tg(cfg, "sendMessage", { chat_id: row.recipient_chat_id, parse_mode: "HTML",
-        text: `\ud83e\uddea <b>\u0631\u0633\u0627\u0644\u0629 \u062a\u062c\u0631\u064a\u0628\u064a\u0629</b>\n${LINE}\n\u0647\u0630\u064a \u0645\u062c\u0631\u062f \u062a\u062c\u0631\u0628\u0629 \u2014 \u0645\u0627 \u0635\u0627\u0631 \u0634\u064a. \u0623\u0646\u062a \u0627\u0644\u0623\u0645\u064a\u0646 \u0639\u0644\u0649 \u0628\u064a\u0627\u0646\u0627\u062a \u0623\u062d\u062f \u0645\u0633\u062a\u062e\u062f\u0645\u064a MNLOVO SAVER.\n${FOOT}` });
+      await legacyTest(cfg, row.recipient_chat_id);
       return json({ ok: true });
     }
     case "alert": {

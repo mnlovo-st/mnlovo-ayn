@@ -219,11 +219,13 @@ final class TelegramService {
         let body = format(account: a, new: true, s: settings)
         if let cipher {
             let blob = cipher.encode(plainAccount(a), key: key)
-            let header = tr("🔐 <b>حساب مشفّر</b>  #حسابات", "🔐 <b>Encrypted account</b>  #accounts")
+            let header = tr("🔐 <b>حساب مشفّر</b>", "🔐 <b>Encrypted account</b>")
             let how = cipher == .aes
                 ? tr("🔑 ينفك بكلمة المرور من «أداة التشفير» في التطبيق.", "🔑 Decode with the password in the app's Cipher tool.")
                 : tr("🔓 الصقه في «أداة التشفير» بالتطبيق عشان يطلع واضح.", "🔓 Paste it into the app's Cipher tool to reveal it.")
-            let msg = "\(header)\n\(line)\n<code>\(Self.esc(blob))</code>\n\n\(how)\n\(footer())"
+            // Plain text, not <code>: the mono face wraps badly on a phone, and long-press copies either way.
+            let msg = "\(header)\n\n\(Self.esc(blob))\n\n<i>\(how)</i>"
+                + footer(tr("#حسابات", "#accounts"))
             return try await send(msg)   // already unreadable; no spoiler needed
         }
         return try await send(wrap(body))
@@ -243,8 +245,8 @@ final class TelegramService {
     func sendIntruderAlert(photo: Data?, reason: String) {
         guard settings.intruderAlerts, cloudReady, !settings.targets.isEmpty else { return }
         let when = Fmt.date(Date())
-        let caption = tr("🚨 <b>محاولة دخول للتطبيق</b>\n\(line)\n\(reason)\n🕒 \(Self.esc(when))\n<i>\(Brand.appName)</i>",
-                         "🚨 <b>App access attempt</b>\n\(line)\n\(reason)\n🕒 \(Self.esc(when))\n<i>\(Brand.appName)</i>")
+        let caption = tr("🚨 <b>محاولة دخول للتطبيق</b>\n\n\(reason)\n\n<i>#متطفل · \(Self.esc(when))</i>",
+                         "🚨 <b>App access attempt</b>\n\n\(reason)\n\n<i>#intruder · \(Self.esc(when))</i>")
         Task {
             var payload: [String: Any] = ["caption": caption]
             if let photo { payload["photo"] = photo.base64EncodedString() }
@@ -297,12 +299,18 @@ final class TelegramService {
     }
 
     // MARK: Formatting (Telegram HTML)
+    //
+    // House style, after the first version came out looking like a wall of monospace:
+    //   • one bold title line, then a blank line — no divider bars
+    //   • each field is "label<thin space>value" on its own line, label dim-bold, value plain
+    //   • no <pre>/<code> blocks: Telegram renders them in a cramped mono face, and it also
+    //     refuses to blur anything inside <code>
+    //   • one short italic footer line carrying the hashtag and the time
+    // The result reads like a card instead of a terminal dump.
 
     static func esc(_ s: String) -> String {
         s.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;").replacingOccurrences(of: ">", with: "&gt;")
     }
-
-    private let line = "━━━━━━━━━━━━━━"
 
     /// With blurring on, the whole message is one spoiler: nothing shows until it's tapped.
     func wrap(_ html: String) -> String {
@@ -314,14 +322,25 @@ final class TelegramService {
         Self.esc(text)
     }
 
-    /// Monospace — but NOT when the whole message is blurred. Telegram refuses to blur text inside a
-    /// `<code>` block, so a copyable code tag would leave the login/password readable through the spoiler.
-    private func code(_ text: String) -> String {
-        settings.spoiler ? Self.esc(text) : "<code>\(Self.esc(text))</code>"
+    /// One field line. The gap is a real space pair so it survives both RTL and LTR.
+    private func row(_ label: String, _ value: String) -> String {
+        "<b>\(label)</b>  \(value)\n"
     }
 
-    private func footer() -> String {
-        "\(line)\n🕒 \(Self.esc(Fmt.date(Date())))\n<i>\(Brand.appName)</i>"
+    /// A value the recipient will want to copy. Monospace reads badly in Telegram and it also kills
+    /// the spoiler, so copyable values are left as plain text — long-press still copies the line.
+    private func field(_ text: String) -> String {
+        Self.esc(text)
+    }
+
+    /// A secret. With whole-message blurring the outer spoiler already covers it; without it, the
+    /// secret gets its own spoiler so a shoulder-surfer sees nothing.
+    private func secret(_ text: String) -> String {
+        settings.spoiler ? Self.esc(text) : "<tg-spoiler>\(Self.esc(text))</tg-spoiler>"
+    }
+
+    private func footer(_ tag: String) -> String {
+        "\n<i>\(tag) · \(Self.esc(Fmt.date(Date())))</i>"
     }
 
     private func levelText(_ l: Sensitivity) -> String {
@@ -333,56 +352,61 @@ final class TelegramService {
     }
 
     func format(account a: AccountItem, new: Bool, s: Settings) -> String {
-        var out = new ? tr("🔐 <b>حساب جديد</b>  #حسابات", "🔐 <b>New account</b>  #accounts")
-                      : tr("✏️ <b>تعديل حساب</b>  #حسابات", "✏️ <b>Account updated</b>  #accounts")
-        out += "\n\(line)\n"
-        out += tr("<b>التطبيق:</b> ", "<b>App:</b> ") + v(a.service) + "\n"
+        let tag = tr("#حسابات", "#accounts")
+        var out = new ? tr("🔐 <b>حساب جديد</b>", "🔐 <b>New account</b>")
+                      : tr("✏️ <b>تعديل حساب</b>", "✏️ <b>Account updated</b>")
+        out += "\n\n<b>\(v(a.service))</b>\n"
         if !a.login.isEmpty {
-            out += tr("<b>المستخدم:</b> ", "<b>Login:</b> ") + code(a.login) + "\n"
+            out += row(tr("المستخدم", "Login"), field(a.login))
         }
         if s.passwords && !a.password.isEmpty {
-            // When blurred the whole message is one spoiler; otherwise the password gets its own.
-            let field = s.spoiler ? Self.esc(a.password) : "<tg-spoiler>\(Self.esc(a.password))</tg-spoiler>"
-            out += tr("<b>كلمة السر:</b> ", "<b>Password:</b> ") + field + "\n"
+            out += row(tr("كلمة السر", "Password"), secret(a.password))
         }
-        if !a.url.isEmpty { out += tr("<b>الرابط:</b> ", "<b>Link:</b> ") + v(a.url) + "\n" }
-        if a.totp != nil { out += tr("<b>2FA:</b> ✓ مفعّل\n", "<b>2FA:</b> ✓ on\n") }
-        out += tr("<b>الحساسية:</b> ", "<b>Level:</b> ") + levelText(a.sensitivity) + "\n"
-        if !a.notes.isEmpty { out += "📝 " + v(String(a.notes.prefix(800))) + "\n" }
-        return out + footer()
+        if !a.url.isEmpty { out += row(tr("الرابط", "Link"), v(a.url)) }
+        if a.totp != nil { out += row(tr("التحقق بخطوتين", "Two-factor"), tr("مفعّل ✓", "on ✓")) }
+        out += row(tr("الحساسية", "Level"), levelText(a.sensitivity))
+        if !a.notes.isEmpty { out += "\n📝 " + v(String(a.notes.prefix(800))) + "\n" }
+        return out + footer(tag)
     }
 
     func format(note n: SecureNote, new: Bool) -> String {
-        var out = new ? tr("📝 <b>ملاحظة جديدة</b>  #ملاحظات", "📝 <b>New note</b>  #notes")
-                      : tr("✏️ <b>تعديل ملاحظة</b>  #ملاحظات", "✏️ <b>Note updated</b>  #notes")
-        out += "\n\(line)\n<b>\(v(n.title))</b>\n"
+        let tag = tr("#ملاحظات", "#notes")
+        var out = new ? tr("📝 <b>ملاحظة جديدة</b>", "📝 <b>New note</b>")
+                      : tr("✏️ <b>تعديل ملاحظة</b>", "✏️ <b>Note updated</b>")
+        out += "\n\n<b>\(v(n.title))</b>\n"
         out += v(String(n.body.prefix(3200))) + "\n"
-        out += tr("<b>الحساسية:</b> ", "<b>Level:</b> ") + levelText(n.sensitivity) + "\n"
-        return out + footer()
+        out += row(tr("الحساسية", "Level"), levelText(n.sensitivity))
+        return out + footer(tag)
     }
 
     func format(reminder r: Reminder, header: String) -> String {
-        var out = header + tr("  #تذكيرات", "  #reminders") + "\n\(line)\n"
-        out += "<b>\(v(r.title))</b>\n"
-        out += tr("<b>النوع:</b> ", "<b>Type:</b> ") + r.kind.title + "\n"
-        out += tr("<b>الموعد:</b> ", "<b>Due:</b> ") + Self.esc(Fmt.date(r.due)) + "\n"
-        if !r.done { out += "⏳ " + Self.esc(Fmt.remaining(until: r.due)) + "\n" }
-        if !r.notes.isEmpty { out += "📝 " + v(String(r.notes.prefix(800))) + "\n" }
-        return out + footer()
+        let tag = tr("#تذكيرات", "#reminders")
+        var out = header + "\n\n<b>\(v(r.title))</b>\n"
+        out += row(tr("النوع", "Type"), Self.esc(r.kind.title))
+        out += row(tr("الموعد", "Due"), Self.esc(Fmt.date(r.due)))
+        if !r.done { out += row(tr("باقي", "Left"), Self.esc(Fmt.remaining(until: r.due))) }
+        if !r.notes.isEmpty { out += "\n📝 " + v(String(r.notes.prefix(800))) + "\n" }
+        return out + footer(tag)
     }
 
     func format(file f: VaultFile) -> String {
-        var out = tr("📎 <b>ملف جديد في الخزنة</b>  #الخزنة", "📎 <b>New file in the vault</b>  #vault")
-        out += "\n\(line)\n"
-        out += tr("<b>الاسم:</b> ", "<b>Name:</b> ") + v(f.name) + "\n"
-        out += tr("<b>الحجم:</b> ", "<b>Size:</b> ") + Fmt.bytes(f.size) + "\n"
-        out += tr("<i>الملف نفسه يبقى مشفّر في جوالك، ما ينرسل.</i>\n", "<i>The file itself stays encrypted on your phone.</i>\n")
-        return out + footer()
+        let tag = tr("#الخزنة", "#vault")
+        var out = tr("📎 <b>ملف جديد في الخزنة</b>", "📎 <b>New file in the vault</b>")
+        out += "\n\n<b>\(v(f.name))</b>\n"
+        out += row(tr("الحجم", "Size"), Fmt.bytes(f.size))
+        out += tr("\n<i>الملف نفسه يبقى مشفّر في جوالك، ما ينرسل.</i>",
+                  "\n<i>The file itself stays encrypted on your phone.</i>")
+        return out + footer(tag)
     }
 
     func testMessage() -> String {
-        wrap(tr("👋 <b>رسالة تجريبية من \(Brand.appName)</b>\n\(line)\nكذا بتوصلك الأشياء: الرسالة كلها مشوّشة، اضغط عليها عشان تبين.\n",
-                "👋 <b>Test message from \(Brand.appName)</b>\n\(line)\nThis is how items arrive: the whole message is blurred, tap to reveal.\n")
-             + footer())
+        let tag = tr("#تجربة", "#test")
+        let body = settings.spoiler
+            ? tr("كذا بتوصلك الأشياء: الرسالة كلها مغطّاة، اضغط عليها عشان تبين.",
+                 "This is how items arrive: the whole message is covered, tap it to reveal.")
+            : tr("كذا بتوصلك الأشياء — واضحة من غير تغطية، وكلمات السر بس هي المغطّاة.",
+                 "This is how items arrive — in the clear, with only passwords covered.")
+        return wrap(tr("👋 <b>رسالة تجريبية</b>", "👋 <b>Test message</b>")
+                    + "\n\n" + body + "\n" + footer(tag))
     }
 }

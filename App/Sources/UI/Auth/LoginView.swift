@@ -196,7 +196,7 @@ struct LoginView: View {
                 PrimaryButton(title: tr("تحقق", "Verify"), icon: "checkmark.shield.fill", loading: loading,
                               enabled: PasswordTools.normalizeRecovery(recoveryKey).count == 24) { Task { await submitRecovery() } }
             } else {
-                CodeField(code: $code, tint: Theme.danger, autofill: false)
+                CodeField(code: $code, tint: Theme.danger)
                     .onChange(of: code) { _, v in if v.count == 6 { submitCode() } }
             }
             HStack(spacing: 18) {

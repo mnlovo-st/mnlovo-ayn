@@ -9,6 +9,8 @@ struct AccountsView: View {
     @State private var showing: AccountItem?
     @State private var secretAction: SecretAction?
     @FocusState private var focus: AYNFieldID?
+    @AppStorage("intro.accounts.seen") private var introSeen = false
+    @State private var showIntro = false
 
     private var reused: Set<UUID> { state.reusedPasswordIDs }
 
@@ -121,6 +123,15 @@ struct AccountsView: View {
         .sheet(item: $showing) { a in AccountDetailView(itemID: a.id).environmentObject(state) }
         .sheet(item: $editing) { a in AccountEditorView(item: a).environmentObject(state) }
         .sheet(item: $secretAction) { act in SecretUnlockSheet(onUnlock: act.run).environmentObject(state) }
+        .onAppear {
+            // Shown once, and never over the decoy vault — the intro would give the trick away.
+            if !introSeen && !state.isDecoy {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { showIntro = true }
+            }
+        }
+        .fullScreenCover(isPresented: $showIntro) {
+            AccountsIntro { introSeen = true; showIntro = false }
+        }
     }
 
     private func toggled(_ a: AccountItem) -> AccountItem { var c = a; c.favorite.toggle(); return c }
@@ -402,10 +413,12 @@ struct AccountEditorView: View {
                     PrimaryButton(title: tr("حفظ", "Save"), icon: "checkmark",
                                   enabled: !item.service.trimmingCharacters(in: .whitespaces).isEmpty) {
                         item.service = item.service.trimmingCharacters(in: .whitespaces)
+                        // Decide before saving — afterwards the item is in the list and isNew flips to false.
+                        let wasNew = isNew
                         state.upsert(item)
                         Haptics.success()
                         // New account + Telegram linked + "ask each time" → offer to post it (plain or ciphered).
-                        if isNew && !state.isDecoy && TelegramService.shared.isReady && TelegramService.shared.settings.askEachTime {
+                        if wasNew && !state.isDecoy && TelegramService.shared.isReady && TelegramService.shared.settings.askEachTime {
                             tgPrompt = item
                         } else {
                             dismiss()
