@@ -548,7 +548,7 @@ struct LegacyView: View {
             if sel.message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 SecondaryButton(title: tr("ابدأ من نموذج", "Start from a template"), icon: "text.badge.plus", color: Theme.accent2) {
                     sel.message = Self.willTemplate
-                    Haptics.light()
+                    Haptics.tap()
                     focus = .legacyWill
                 }
             }

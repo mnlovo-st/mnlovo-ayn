@@ -87,7 +87,7 @@ struct TelegramSendPrompt: View {
             choice(.cipher, "lock.shield.fill", tr("شفّره قبل الإرسال", "Encrypt it first"),
                    tr("يتحوّل لطلاسم، ما يفكها إلا «أداة التشفير» في التطبيق.", "Turns into gibberish only the app's Cipher tool can read."))
             Button {
-                Haptics.light()
+                Haptics.tap()
                 showCipherIntro = true
             } label: {
                 Label(tr("وش يعني تشفير؟ شوف الشرح", "What does ciphering mean? Watch the walkthrough"),

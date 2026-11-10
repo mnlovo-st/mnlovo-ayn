@@ -307,6 +307,13 @@ struct CodeField: View {
         }
     }
 
+    /// Pulls a code out of pasted text: western digits only, trimmed to the field's length.
+    /// Reading the string rather than a number keeps a leading zero, which codes often have.
+    static func extractCode(_ text: String, max length: Int) -> String {
+        let digits = TOTP.westernDigits(text).filter { $0.isASCII && $0.isNumber }
+        return String(digits.prefix(length))
+    }
+
     /// A big, friendly paste button that lights up when a code is sitting on the clipboard
     /// (detected without reading it, so iOS doesn't ask for permission).
     private var pasteRow: some View {
