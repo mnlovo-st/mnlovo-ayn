@@ -15,6 +15,7 @@ struct IntroView: View {
     @State private var dust = false
     @State private var zoom = false
     @State private var finished = false
+    @State private var proud = false
     private let word = Array("MNLOVO")
 
     var body: some View {
@@ -73,16 +74,33 @@ struct IntroView: View {
                 .environment(\.layoutDirection, .leftToRight)
 
                 Spacer()
-                VStack(spacing: 6) {
-                    Text(tr("اضغط للتخطي", "Tap to skip")).font(Theme.font(12)).foregroundStyle(Theme.faint)
-                    Text(Brand.copyright).font(Theme.font(11, .bold)).foregroundStyle(Theme.faint)
-                }
-                .opacity(dust ? 1 : 0)
-                .padding(.bottom, 18)
+                Spacer().frame(height: 150)   // room for the footer below
             }
             .scaleEffect(zoom ? 5 : 1)
             .opacity(zoom ? 0 : 1)
             .blur(radius: zoom ? 12 : 0)
+
+            // The footer stays put while the eye flies forward, the way UAE government apps keep
+            // the "فخورين بالإمارات" mark steady at the foot of their opening screen.
+            VStack(spacing: 14) {
+                Spacer()
+                Image("ProudUAE")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 96)
+                    .opacity(proud ? 1 : 0)
+                    .offset(y: proud ? 0 : 14)
+                    .accessibilityLabel(tr("فخورين بالإمارات", "Proud of UAE"))
+                VStack(spacing: 4) {
+                    Text(tr("اضغط للتخطي", "Tap to skip")).font(Theme.font(11)).foregroundStyle(Theme.faint)
+                    Text(Brand.copyright).font(Theme.font(10, .bold)).foregroundStyle(Theme.faint.opacity(0.8))
+                }
+                .opacity(dust ? 1 : 0)
+            }
+            .padding(.bottom, 18)
+            .opacity(zoom ? 0 : 1)
+            .animation(.easeOut(duration: 0.35), value: zoom)
+            .allowsHitTesting(false)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentShape(Rectangle())
@@ -123,9 +141,10 @@ struct IntroView: View {
         }
         withAnimation(.easeInOut(duration: 0.9)) { shimmer = 1.2 }
         withAnimation(.easeOut(duration: 0.9)) { showSaver = true; saverTracking = 10 }
+        withAnimation(.easeOut(duration: 0.8).delay(0.2)) { proud = true }
         await pause(0.5)
         withAnimation { mood = .happy }
-        await pause(0.85)
+        await pause(1.15)
         withAnimation(.easeIn(duration: 0.45)) { zoom = true }
         await pause(0.4)
         finish()
