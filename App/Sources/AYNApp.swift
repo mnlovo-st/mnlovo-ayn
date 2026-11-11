@@ -51,6 +51,8 @@ struct AYNApp: App {
 struct RootView: View {
     @EnvironmentObject var state: AppState
     @Environment(\.scenePhase) private var scenePhase
+    @AppStorage("sec.allowScreenshots") private var allowShots = false
+    @AppStorage("sec.allowRecording") private var allowRecording = false
 
     var body: some View {
         ZStack {
@@ -71,7 +73,7 @@ struct RootView: View {
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
 
-            if state.privacyCover || state.screenCaptured {
+            if state.privacyCover || (state.screenCaptured && !allowRecording) {
                 PrivacyCover(recording: state.screenCaptured)
                     .transition(.opacity)
                     .zIndex(50)
@@ -91,7 +93,19 @@ struct RootView: View {
             }
         }
         .animation(.easeInOut(duration: 0.25), value: state.privacyCover)
-        .onChange(of: scenePhase) { _, newValue in state.scenePhaseChanged(newValue) }
+        .onChange(of: scenePhase) { _, newValue in
+            state.scenePhaseChanged(newValue)
+            if newValue == .active {
+                ScreenShield.shared.install()
+                LiveActivityManager.sync()
+            }
+        }
+        .onAppear {
+            // The window needs a moment on screen before its layer can be moved.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { ScreenShield.shared.install() }
+        }
+        .onChange(of: allowShots) { _, _ in ScreenShield.shared.apply(captured: state.screenCaptured) }
+        .onChange(of: allowRecording) { _, _ in ScreenShield.shared.apply(captured: state.screenCaptured) }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.userDidTakeScreenshotNotification)) { _ in
             guard state.isUnlocked else { return }
             state.logScreenEvent(.screenshot)
@@ -105,6 +119,7 @@ struct RootView: View {
             let captured = UIScreen.main.isCaptured
             if captured && !state.screenCaptured && state.isUnlocked { state.logScreenEvent(.recording) }
             state.screenCaptured = captured
+            ScreenShield.shared.apply(captured: captured)
         }
         .onReceive(NotificationCenter.default.publisher(for: .aynTelegramSent)) { _ in
             state.show(tr("تم الإرسال ✓", "Sent ✓"), icon: "paperplane.fill")

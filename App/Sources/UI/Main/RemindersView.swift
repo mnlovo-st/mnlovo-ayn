@@ -335,6 +335,19 @@ struct ReminderEditor: View {
                             }
                             .glass(14)
 
+                            if reminder.kind != .routine {
+                                Toggle(isOn: $reminder.showInIsland) {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Label(tr("عدّاد في Dynamic Island", "Countdown in the Dynamic Island"),
+                                              systemImage: "platter.filled.top.iphone")
+                                            .font(Theme.font(15, .semibold))
+                                        Text(tr("يطلع قبل الموعد بساعة ويعدّ لين يخلص الوقت", "Appears an hour before and counts down to the time"))
+                                            .font(Theme.font(12)).foregroundStyle(Theme.sub)
+                                    }
+                                }
+                                .tint(Theme.accent).glass(14)
+                            }
+
                             schedulePreview
                         }
                     }

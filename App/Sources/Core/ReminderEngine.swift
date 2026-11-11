@@ -274,6 +274,15 @@ enum WidgetBridge {
         payload.totalToday = todays.count
         payload.doneToday = todays.filter { $0.routine?.isDone(on: now) ?? false }.count
         payload.streak = routines.compactMap { $0.routine?.streak(now: now) }.max() ?? 0
+        let cal = Calendar.current
+        payload.routines = todays.compactMap { r -> WidgetShared.RoutineItem? in
+            guard let rt = r.routine, !rt.isSkipped(on: now),
+                  let at = cal.date(bySettingHour: rt.hour, minute: rt.minute, second: 0, of: now) else { return nil }
+            return WidgetShared.RoutineItem(id: r.id.uuidString,
+                                            title: r.sensitivity == .secret ? tr("روتين سري", "Secret routine") : r.title,
+                                            emoji: rt.emoji, at: at, done: rt.isDone(on: now))
+        }
+        .sorted { $0.at < $1.at }
 
         // Next subscription renewal and the monthly total in its currency
         let subs = all.filter { $0.isSubscription && !$0.done }.sorted { $0.due < $1.due }
@@ -285,35 +294,103 @@ enum WidgetBridge {
             payload.subMonthly = Subscription.money(monthly, s.currency)
         }
 
+        // The safety snapshot only changes while the vault is open; keep the last known values otherwise.
+        let previous = WidgetShared.load()
+        payload.lastBackup = previous.lastBackup
+        payload.intruders = previous.intruders
+        payload.accounts = previous.accounts
+        payload.weak = previous.weak
+        if let v = vault {
+            payload.lastBackup = v.lastBackup
+            payload.intruders = v.intruders
+            payload.accounts = v.accounts
+            payload.weak = v.weak
+        }
+
         WidgetShared.save(payload)
         WidgetCenter.shared.reloadAllTimelines()
     }
+
+    struct VaultSnapshot { var accounts: Int; var weak: Int; var intruders: Int; var lastBackup: Date? }
+    /// Set by the app whenever the vault is open, so the safety widget has something to say.
+    static var vault: VaultSnapshot?
 }
 
-/// Last-day countdown in the Dynamic Island and on the Lock Screen.
+/// The last-hour countdown in the Dynamic Island and on the Lock Screen.
+///
+/// It appears one hour before a task is due, and only for reminders that have "show in Dynamic
+/// Island" switched on (the default). On iOS 26 and later the system starts it at that moment
+/// by itself, even with the app closed. Older versions don't allow an app to start one from the
+/// background, so there it starts the next time the app is open inside that hour, and a one-minute
+/// timer keeps checking while the app stays open.
 enum LiveActivityManager {
     static var enabled: Bool { UserDefaults.standard.object(forKey: "fx.liveActivity") as? Bool ?? true }
+    static let lead: TimeInterval = 3600
+    private static var timer: Timer?
+
+    static func eligible(now: Date = Date()) -> [Reminder] {
+        RemindersStore.load(.real)
+            .filter { !$0.done && !$0.isRoutine && !$0.isSubscription && $0.showInIsland && $0.due > now }
+            .sorted { $0.due < $1.due }
+    }
+
+    private static func attributes(_ t: Reminder) -> ReminderActivityAttributes {
+        ReminderActivityAttributes(reminderID: t.id.uuidString,
+                                   title: t.sensitivity == .secret ? tr("🔒 مهمة سرية", "🔒 Secret task") : t.title,
+                                   icon: t.kind.icon,
+                                   isArabic: AppLanguage.current == .ar,
+                                   start: t.due.addingTimeInterval(-lead),
+                                   kindTitle: t.kind.title)
+    }
 
     static func sync() {
         let now = Date()
-        let candidates = RemindersStore.load(.real)
-            .filter { !$0.done && !$0.isRoutine && $0.due > now && $0.due.timeIntervalSince(now) < 86400 }
-            .sorted { $0.due < $1.due }
-        let target = enabled ? candidates.first : nil
+        let all = enabled ? eligible(now: now) : []
+        // Running now: due inside the hour. Scheduled ahead (iOS 26+): the next few after that.
+        let live = all.filter { $0.due.timeIntervalSince(now) <= lead }.prefix(1)
+        var wanted = Set(live.map { $0.id.uuidString })
+        var ahead: [Reminder] = []
+        if #available(iOS 26.0, *) {
+            ahead = Array(all.filter { $0.due.timeIntervalSince(now) > lead && $0.due.timeIntervalSince(now) < 7 * 86400 }.prefix(3))
+            wanted.formUnion(ahead.map { $0.id.uuidString })
+        }
 
-        for act in Activity<ReminderActivityAttributes>.activities where act.attributes.reminderID != target?.id.uuidString {
+        for act in Activity<ReminderActivityAttributes>.activities where !wanted.contains(act.attributes.reminderID) {
             Task { await act.end(nil, dismissalPolicy: .immediate) }
         }
-        guard let t = target, ActivityAuthorizationInfo().areActivitiesEnabled else { return }
-        if Activity<ReminderActivityAttributes>.activities.contains(where: { $0.attributes.reminderID == t.id.uuidString }) { return }
-        let attrs = ReminderActivityAttributes(reminderID: t.id.uuidString,
-                                               title: t.sensitivity == .secret ? tr("🔒 مهمة سرية", "🔒 Secret task") : t.title,
-                                               icon: t.kind.icon,
-                                               isArabic: AppLanguage.current == .ar,
-                                               start: min(now, t.due.addingTimeInterval(-86400)),
-                                               kindTitle: t.kind.title)
-        let content = ActivityContent(state: ReminderActivityAttributes.ContentState(due: t.due),
-                                      staleDate: t.due.addingTimeInterval(3600))
-        _ = try? Activity.request(attributes: attrs, content: content, pushType: nil)
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        let existing = Set(Activity<ReminderActivityAttributes>.activities.map { $0.attributes.reminderID })
+
+        for t in live where !existing.contains(t.id.uuidString) {
+            let content = ActivityContent(state: ReminderActivityAttributes.ContentState(due: t.due),
+                                          staleDate: t.due.addingTimeInterval(lead))
+            _ = try? Activity.request(attributes: attributes(t), content: content, pushType: nil)
+        }
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) {
+            for t in ahead where !existing.contains(t.id.uuidString) {
+                let content = ActivityContent(state: ReminderActivityAttributes.ContentState(due: t.due),
+                                              staleDate: t.due.addingTimeInterval(lead))
+                let alert = AlertConfiguration(title: LocalizedStringResource(stringLiteral: tr("باقي ساعة", "One hour left")),
+                                               body: LocalizedStringResource(stringLiteral: t.sensitivity == .secret ? tr("مهمة سرية", "A secret task") : t.title),
+                                               sound: .default)
+                _ = try? Activity.request(attributes: attributes(t), content: content, pushType: nil,
+                                          style: .standard, alertConfiguration: alert,
+                                          start: t.due.addingTimeInterval(-lead))
+            }
+        }
+        #endif
+    }
+
+    /// While the app is open, check every minute so a task that enters its last hour gets its
+    /// countdown without waiting for the next launch.
+    static func startWatching() {
+        timer?.invalidate()
+        timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in sync() }
+    }
+
+    static func stopWatching() {
+        timer?.invalidate()
+        timer = nil
     }
 }

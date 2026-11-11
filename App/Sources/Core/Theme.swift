@@ -162,12 +162,14 @@ final class SoundFX {
         }
     }
 
-    var enabled: Bool { UserDefaults.standard.object(forKey: "fx.sound") as? Bool ?? true }
+    /// Sounds are off until the person turns them on in Settings. The intro is the one exception:
+    /// it is the app's first impression, so it always plays.
+    var enabled: Bool { UserDefaults.standard.object(forKey: "fx.sound") as? Bool ?? false }
 
     private var lastError = Date.distantPast
 
     func play(_ s: SFX, volume: Float = 0.55) {
-        guard enabled, let p = players[s] else { return }
+        guard enabled || s == .intro, let p = players[s] else { return }
         // Never stack the same sound within 0.4 s, and never two error sounds on top of each other.
         if let last = lastPlayed[s], Date().timeIntervalSince(last) < 0.4 { return }
         if s.isError {

@@ -23,8 +23,11 @@ private func wf(_ size: CGFloat, _ weight: Font.Weight) -> Font {
 struct SaverWidgetBundle: WidgetBundle {
     var body: some Widget {
         NextTasksWidget()
+        RoutinesWidget()
+        CountdownWidget()
         StreakWidget()
         SubscriptionWidget()
+        SecurityWidget()
         QuickOpenWidget()
         ReminderLiveActivity()
     }
@@ -47,8 +50,15 @@ struct TasksProvider: TimelineProvider {
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<TasksEntry>) -> Void) {
-        let entry = TasksEntry(date: Date(), payload: WidgetShared.load())
-        completion(Timeline(entries: [entry], policy: .after(Date().addingTimeInterval(15 * 60))))
+        let now = Date()
+        let p = WidgetShared.load()
+        // One entry now, plus one at each routine time and task time in the next few hours, so
+        // "next up" and the colours move on by themselves without the app being opened.
+        var moments = p.routines.map(\.at) + p.items.map(\.due)
+        moments.append(Calendar.current.startOfDay(for: now).addingTimeInterval(86400))   // midnight
+        let upcoming = Array(Set(moments.filter { $0 > now && $0 < now.addingTimeInterval(12 * 3600) })).sorted().prefix(12)
+        let entries = [TasksEntry(date: now, payload: p)] + upcoming.map { TasksEntry(date: $0, payload: p) }
+        completion(Timeline(entries: entries, policy: .after(now.addingTimeInterval(30 * 60))))
     }
 }
 
@@ -169,7 +179,7 @@ struct ReminderLiveActivity: Widget {
                         Text(a.title)
                             .font(wf(16, .bold)).foregroundStyle(.white)
                             .lineLimit(1)
-                        Text(a.kindTitle.isEmpty ? (ar ? "آخر يوم" : "Last day") : (ar ? "\(a.kindTitle) · آخر يوم" : "\(a.kindTitle) · last day"))
+                        Text(a.kindTitle.isEmpty ? (ar ? "آخر ساعة" : "Last hour") : (ar ? "\(a.kindTitle) · آخر ساعة" : "\(a.kindTitle) · last hour"))
                             .font(wf(11, .semibold)).foregroundStyle(teal.opacity(0.85))
                             .lineLimit(1)
                     }
@@ -256,7 +266,7 @@ private struct LockScreenActivity: View {
                 Image(systemName: "eye.fill").font(.system(size: 11, weight: .bold)).foregroundStyle(teal)
                 Text("MNLOVO SAVER").font(wf(11, .heavy)).foregroundStyle(.white.opacity(0.55)).tracking(1)
                 Spacer()
-                Text(ar ? "آخر يوم" : "LAST DAY")
+                Text(ar ? "آخر ساعة" : "LAST HOUR")
                     .font(wf(10, .heavy)).foregroundStyle(night)
                     .padding(.horizontal, 8).padding(.vertical, 3)
                     .background(Capsule().fill(LinearGradient(colors: [teal, indigo], startPoint: .leading, endPoint: .trailing)))
@@ -454,6 +464,240 @@ struct QuickOpenView: View {
                     .font(wf(10, .medium)).foregroundStyle(.white.opacity(0.5))
                     .lineLimit(1).minimumScaleFactor(0.7)
             }
+        }
+    }
+}
+
+
+// MARK: - Shared bits for the new widgets
+
+private func bg(_ top: Color) -> some View {
+    LinearGradient(colors: [top, night], startPoint: .topLeading, endPoint: .bottomTrailing)
+}
+
+private func header(_ title: String, _ icon: String, _ tint: Color, trailing: String? = nil) -> some View {
+    HStack(spacing: 6) {
+        Image(systemName: icon).font(.system(size: 11, weight: .bold)).foregroundStyle(tint)
+        Text(title).font(wf(13, .heavy)).foregroundStyle(.white)
+        Spacer(minLength: 0)
+        if let trailing { Text(trailing).font(wf(12, .bold)).foregroundStyle(.white.opacity(0.5)) }
+    }
+}
+
+// MARK: - Today's routines
+
+struct RoutinesWidget: Widget {
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: WidgetShared.routinesKind, provider: TasksProvider()) { entry in
+            RoutinesView(entry: entry)
+                .containerBackground(for: .widget) { bg(Color(red: 0.03, green: 0.12, blue: 0.11)) }
+        }
+        .configurationDisplayName("MNLOVO · Routines")
+        .description("Today's routines · روتين اليوم")
+        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge, .accessoryRectangular, .accessoryCircular])
+    }
+}
+
+struct RoutinesView: View {
+    var entry: TasksEntry
+    @Environment(\.widgetFamily) private var family
+    private var p: WidgetShared.Payload { entry.payload }
+    private var ar: Bool { p.isArabic }
+    private var done: Int { p.routines.filter(\.done).count }
+    private var next: WidgetShared.RoutineItem? { p.routines.first { !$0.done && $0.at >= entry.date.addingTimeInterval(-1800) } }
+    private var limit: Int { family == .systemLarge ? 8 : (family == .systemMedium ? 3 : 2) }
+
+    var body: some View {
+        switch family {
+        case .accessoryCircular:
+            ZStack {
+                AccessoryWidgetBackground()
+                Gauge(value: p.routines.isEmpty ? 0 : Double(done) / Double(p.routines.count)) {
+                    Image(systemName: "checklist")
+                }
+                .gaugeStyle(.accessoryCircularCapacity)
+                Text("\(done)/\(p.routines.count)").font(.system(size: 12, weight: .bold))
+            }
+        case .accessoryRectangular:
+            VStack(alignment: .leading, spacing: 2) {
+                Label(ar ? "الروتين \(done)/\(p.routines.count)" : "Routines \(done)/\(p.routines.count)", systemImage: "checklist")
+                    .font(.headline)
+                if let n = next {
+                    Text("\(n.emoji) \(n.title)").font(.body).lineLimit(1)
+                    Text(n.at, style: .time).font(.caption)
+                } else {
+                    Text(p.routines.isEmpty ? (ar ? "ما عندك روتين اليوم" : "Nothing today") : (ar ? "خلّصت كل شي ✓" : "All done ✓"))
+                        .font(.caption)
+                }
+            }
+        default:
+            VStack(alignment: .leading, spacing: 7) {
+                header(ar ? "روتين اليوم" : "Today", "checklist", teal, trailing: "\(done)/\(p.routines.count)")
+                if p.routines.isEmpty {
+                    Spacer()
+                    Text(ar ? "ما عندك روتين اليوم" : "No routines today").font(wf(14, .bold)).foregroundStyle(.white.opacity(0.8))
+                    Spacer()
+                } else {
+                    // a thin progress line under the header
+                    GeometryReader { g in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(.white.opacity(0.1))
+                            Capsule().fill(LinearGradient(colors: [teal, indigo], startPoint: .leading, endPoint: .trailing))
+                                .frame(width: g.size.width * CGFloat(done) / CGFloat(max(1, p.routines.count)))
+                        }
+                    }
+                    .frame(height: 4)
+                    ForEach(p.routines.prefix(limit)) { r in
+                        HStack(spacing: 8) {
+                            Text(r.emoji).font(.system(size: 15))
+                            VStack(alignment: .leading, spacing: 0) {
+                                Text(r.title).font(wf(13, .bold)).foregroundStyle(r.done ? .white.opacity(0.45) : .white)
+                                    .strikethrough(r.done).lineLimit(1)
+                                Text(r.at, style: .time).font(wf(10, .semibold))
+                                    .foregroundStyle(r.id == next?.id ? teal : .white.opacity(0.45))
+                            }
+                            Spacer(minLength: 0)
+                            Image(systemName: r.done ? "checkmark.circle.fill" : "circle")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(r.done ? teal : .white.opacity(0.3))
+                        }
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+            .environment(\.layoutDirection, ar ? .rightToLeft : .leftToRight)
+        }
+    }
+}
+
+// MARK: - Big countdown to the next task
+
+struct CountdownWidget: Widget {
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: WidgetShared.countdownKind, provider: TasksProvider()) { entry in
+            CountdownView(entry: entry)
+                .containerBackground(for: .widget) { bg(Color(red: 0.12, green: 0.05, blue: 0.03)) }
+        }
+        .configurationDisplayName("MNLOVO · Countdown")
+        .description("Time left on the next task · كم باقي على المهمة الياية")
+        .supportedFamilies([.systemSmall, .accessoryCircular, .accessoryInline])
+    }
+}
+
+struct CountdownView: View {
+    var entry: TasksEntry
+    @Environment(\.widgetFamily) private var family
+    private var ar: Bool { entry.payload.isArabic }
+    private var next: WidgetShared.Item? { entry.payload.items.first { $0.due > entry.date } }
+
+    var body: some View {
+        if let n = next {
+            switch family {
+            case .accessoryInline:
+                Text("⏳ \(n.title) · \(n.due, style: .relative)")
+            case .accessoryCircular:
+                ZStack {
+                    AccessoryWidgetBackground()
+                    VStack(spacing: 0) {
+                        Image(systemName: n.icon).font(.system(size: 11, weight: .bold))
+                        Text(n.due, style: .timer).font(.system(size: 11, weight: .bold)).monospacedDigit()
+                            .multilineTextAlignment(.center).minimumScaleFactor(0.6)
+                    }
+                    .padding(4)
+                }
+            default:
+                VStack(alignment: .leading, spacing: 6) {
+                    header(ar ? "باقي" : "Left", "hourglass", Color.orange)
+                    Spacer(minLength: 0)
+                    Text(n.due, style: .relative)
+                        .font(wf(22, .heavy)).foregroundStyle(.white)
+                        .minimumScaleFactor(0.5).lineLimit(2)
+                        .environment(\.layoutDirection, .leftToRight)
+                    HStack(spacing: 5) {
+                        Image(systemName: n.icon).font(.system(size: 11, weight: .bold)).foregroundStyle(Color.orange)
+                        Text(n.title).font(wf(12, .bold)).foregroundStyle(.white.opacity(0.75)).lineLimit(1)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .environment(\.layoutDirection, ar ? .rightToLeft : .leftToRight)
+            }
+        } else {
+            VStack(spacing: 6) {
+                Image(systemName: "checkmark.seal.fill").font(.system(size: 22)).foregroundStyle(teal)
+                if family != .accessoryInline && family != .accessoryCircular {
+                    Text(ar ? "ولا مهمة قريبة" : "Nothing coming up").font(wf(12, .semibold)).foregroundStyle(.white.opacity(0.7))
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Safety at a glance
+
+struct SecurityWidget: Widget {
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: WidgetShared.securityKind, provider: TasksProvider()) { entry in
+            SecurityView(p: entry.payload, now: entry.date)
+                .containerBackground(for: .widget) { bg(Color(red: 0.04, green: 0.06, blue: 0.14)) }
+        }
+        .configurationDisplayName("MNLOVO · Safety")
+        .description("Backup, weak passwords, intruders · حالة الأمان")
+        .supportedFamilies([.systemSmall, .systemMedium, .accessoryRectangular])
+    }
+}
+
+struct SecurityView: View {
+    var p: WidgetShared.Payload
+    var now: Date
+    @Environment(\.widgetFamily) private var family
+    private var ar: Bool { p.isArabic }
+
+    /// Backup older than three days counts as a problem worth showing.
+    private var backupStale: Bool { p.lastBackup.map { now.timeIntervalSince($0) > 3 * 86400 } ?? true }
+    private var allGood: Bool { !backupStale && p.weak == 0 && p.intruders == 0 }
+
+    private func row(_ icon: String, _ text: String, ok: Bool) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon).font(.system(size: 11, weight: .bold))
+                .foregroundStyle(ok ? teal : Color(red: 1, green: 0.55, blue: 0.3))
+                .frame(width: 14)
+            Text(text).font(wf(11, .semibold)).foregroundStyle(.white.opacity(0.85)).lineLimit(1).minimumScaleFactor(0.7)
+            Spacer(minLength: 0)
+        }
+    }
+
+    private var backupText: String {
+        guard let d = p.lastBackup else { return ar ? "ما فيه نسخة احتياطية" : "No backup yet" }
+        let f = RelativeDateTimeFormatter()
+        f.locale = Locale(identifier: ar ? "ar" : "en")
+        f.unitsStyle = .short
+        return (ar ? "نسخة: " : "Backup: ") + f.localizedString(for: d, relativeTo: now)
+    }
+
+    var body: some View {
+        if family == .accessoryRectangular {
+            VStack(alignment: .leading, spacing: 2) {
+                Label(allGood ? (ar ? "كل شي سليم" : "All good") : (ar ? "يحتاج انتباه" : "Needs attention"),
+                      systemImage: allGood ? "checkmark.shield.fill" : "exclamationmark.shield.fill").font(.headline)
+                Text(backupText).font(.caption)
+                if p.intruders > 0 { Text(ar ? "\(p.intruders) محاولة دخول" : "\(p.intruders) intrusion attempts").font(.caption) }
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 7) {
+                header(ar ? "الأمان" : "Safety", allGood ? "checkmark.shield.fill" : "exclamationmark.shield.fill",
+                       allGood ? teal : Color.orange)
+                row("icloud.fill", backupText, ok: !backupStale)
+                row("key.fill", p.weak == 0 ? (ar ? "كلمات السر قوية" : "Passwords look strong")
+                                            : (ar ? "\(p.weak) كلمة سر تحتاج تغيير" : "\(p.weak) passwords to change"), ok: p.weak == 0)
+                row("eye.trianglebadge.exclamationmark.fill",
+                    p.intruders == 0 ? (ar ? "ما فيه متطفلين" : "No intruders") : (ar ? "\(p.intruders) محاولة دخول" : "\(p.intruders) attempts"),
+                    ok: p.intruders == 0)
+                if family == .systemMedium {
+                    row("person.text.rectangle.fill", ar ? "\(p.accounts) حساب محفوظ" : "\(p.accounts) accounts saved", ok: true)
+                }
+                Spacer(minLength: 0)
+            }
+            .environment(\.layoutDirection, ar ? .rightToLeft : .leftToRight)
         }
     }
 }

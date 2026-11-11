@@ -5,9 +5,11 @@ import UserNotifications
 struct SettingsView: View {
     @EnvironmentObject var state: AppState
     @AppStorage(AppLanguage.storageKey) private var lang: String = AppLanguage.systemDefault.rawValue
-    @AppStorage("fx.sound") private var sound = true
+    @AppStorage("fx.sound") private var sound = false
     @AppStorage("fx.haptics") private var haptics = true
     @AppStorage("fx.liveActivity") private var liveActivity = true
+    @AppStorage("sec.allowScreenshots") private var allowShots = false
+    @AppStorage("sec.allowRecording") private var allowRecording = false
     @AppStorage("sec.screenshotAlert") private var screenshotAlert = true
     @AppStorage("sec.sectionBiometric") private var sectionBio = false
     @AppStorage("sec.intruder") private var intruder = false
@@ -18,7 +20,7 @@ struct SettingsView: View {
     @State private var secretTaps = 0
 
     enum SettingsSheet: String, Identifiable {
-        case password, section, twoFA, recovery, duress, intruders, cloudSetup, backup, telegram, delete, desk, cipher, legacy
+        case password, section, twoFA, recovery, duress, intruders, cloudSetup, backup, telegram, delete, desk, cipher, legacy, widgets
         var id: String { rawValue }
     }
 
@@ -81,7 +83,18 @@ struct SettingsView: View {
                     row("eye.trianglebadge.exclamationmark.fill", tr("سجل المتطفلين", "Intruder log"),
                         badge: state.newIntrusions > 0 ? "\(state.newIntrusions)" : nil) { sheet = .intruders }
                     divider
-                    toggleRow("camera.viewfinder", tr("تنبيه لقطة الشاشة", "Screenshot alert"), $screenshotAlert)
+                    toggleRow("camera.viewfinder", tr("السماح بلقطة الشاشة", "Allow screenshots"), $allowShots)
+                    divider
+                    toggleRow("record.circle", tr("السماح بتصوير الشاشة", "Allow screen recording"), $allowRecording)
+                    Text(allowShots && allowRecording
+                         ? tr("التطبيق يطلع في اللقطات والتسجيل.", "The app shows up in screenshots and recordings.")
+                         : tr("اللي ممنوع يطلع أسود، ونسجّل المحاولة في سجل المتطفلين.",
+                              "Whatever is blocked comes out black, and the attempt goes in the intruder log."))
+                        .font(Theme.font(12)).foregroundStyle(Theme.faint)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 4)
+                    divider
+                    toggleRow("bell.badge", tr("تنبيه لقطة الشاشة", "Screenshot alert"), $screenshotAlert)
                     if !state.isDecoy {
                         divider
                         row("theatermasks.fill", tr("كلمة سر الطوارئ", "Duress password"),
@@ -117,6 +130,9 @@ struct SettingsView: View {
                     toggleRow("platter.filled.top.iphone", tr("العد التنازلي في Dynamic Island", "Dynamic Island countdown"), $liveActivity)
                         .onChange(of: liveActivity) { _, _ in LiveActivityManager.sync() }
                     divider
+                    row("square.grid.2x2.fill", tr("أضف ودجت للشاشة الرئيسية", "Add a widget to the Home Screen"),
+                        value: tr("٧ أنواع", "7 kinds")) { sheet = .widgets }
+                    divider
                     row("bell.and.waves.left.and.right.fill", tr("إشعار تجريبي", "Test notification")) { Task { await testNotification() } }
                     divider
                     VStack(alignment: .leading, spacing: 8) {
@@ -133,7 +149,7 @@ struct SettingsView: View {
                         value: tr("\(Cipher.allCases.count) طرق", "\(Cipher.allCases.count) ways")) { sheet = .cipher }
                     row("play.rectangle.on.rectangle.fill", tr("أعد شرح الأقسام", "Replay the section intros"),
                         value: tr("حسابات · خزنة · تذكيرات", "Accounts · Vault · Reminders")) {
-                        for k in ["intro.accounts.seen", "intro.vault.seen", "intro.reminders.seen"] {
+                        for k in ["intro.accounts.seen", "intro.vault.seen", "intro.reminders.seen", "intro.widgets.seen", "intro.cipher.seen"] {
                             UserDefaults.standard.set(false, forKey: k)
                         }
                         Haptics.success()
@@ -202,6 +218,7 @@ struct SettingsView: View {
                 case .desk: SupportDeskView()
                 case .cipher: CipherToolView()
                 case .legacy: LegacyView()
+                case .widgets: WidgetGuideSheet()
                 }
             }
             .environmentObject(state)

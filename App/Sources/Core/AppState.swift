@@ -470,6 +470,8 @@ final class AppState: ObservableObject {
         Haptics.success()
         ReminderEngine.rescheduleAll()
         LiveActivityManager.sync()
+        LiveActivityManager.startWatching()
+        if s == .real { refreshWidgetSnapshot() }
         if s == .real {
             if cloudReady && !defaults.bool(forKey: "registry.v2") {
                 let p = prof
@@ -819,11 +821,22 @@ final class AppState: ObservableObject {
             TelegramService.shared.post(.accountAdded(u), space: space)
         }
         persist(accounts, "accounts.enc")
+        refreshWidgetSnapshot()
+    }
+
+    /// The numbers the safety widget shows. Only counts and dates leave the vault, never names.
+    func refreshWidgetSnapshot() {
+        guard space == .real, isUnlocked else { return }
+        let weak = accounts.filter { !$0.password.isEmpty && PasswordTools.strength($0.password).score <= 1 }.count
+        WidgetBridge.vault = .init(accounts: accounts.count, weak: weak + reusedPasswordIDs.count,
+                                   intruders: newIntrusions, lastBackup: lastBackup)
+        WidgetBridge.update()
     }
 
     func delete(_ item: AccountItem) {
         accounts.removeAll { $0.id == item.id }
         persist(accounts, "accounts.enc")
+        refreshWidgetSnapshot()
         SoundFX.shared.play(.delete)
     }
 
@@ -979,6 +992,7 @@ final class AppState: ObservableObject {
         let lastSeen = defaults.double(forKey: "sec.lastSeenIntrusion")
         let events = intruderEvents().filter { $0.date.timeIntervalSince1970 > lastSeen && $0.reason != .screenshot }
         newIntrusions = events.count
+        refreshWidgetSnapshot()
         if !events.isEmpty {
             show(tr("⚠️ في \(events.count) محاولة دخول فاشلة. شوف سجل المتطفلين.",
                     "⚠️ \(events.count) failed sign-in attempts. Check the intruder log."),
@@ -1096,6 +1110,7 @@ final class AppState: ObservableObject {
             try await SupabaseClient.shared.uploadBackup(data)
             defaults.set(Date().timeIntervalSince1970, forKey: "backup.last")
             defaults.set(false, forKey: "backup.dirty")
+            refreshWidgetSnapshot()
             syncError = nil
             objectWillChange.send()
             return true

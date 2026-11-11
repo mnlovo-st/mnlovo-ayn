@@ -286,6 +286,14 @@ struct Reminder: Codable, Identifiable, Hashable {
     var created = Date()
     var routine: Routine?
     var subscription: Subscription?
+    /// Show the last-hour countdown in the Dynamic Island. Optional so reminders saved before this
+    /// existed still load; missing means on.
+    var island: Bool?
+
+    var showInIsland: Bool {
+        get { island ?? true }
+        set { island = newValue }
+    }
 
     var isRoutine: Bool { kind == .routine && routine != nil }
     var isSubscription: Bool { kind == .subscription && subscription != nil }
