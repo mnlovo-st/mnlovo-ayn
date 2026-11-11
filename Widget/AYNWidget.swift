@@ -649,12 +649,6 @@ struct RoutinesView: View {
                         }
                     }
                     Spacer(minLength: 0)
-                            Image(systemName: r.done ? "checkmark.circle.fill" : "circle")
-                                .font(.system(size: 15, weight: .semibold))
-                                .foregroundStyle(r.done ? teal : .white.opacity(0.3))
-                        }
-                    }
-                    Spacer(minLength: 0)
                 }
             }
             .environment(\.layoutDirection, ar ? .rightToLeft : .leftToRight)
