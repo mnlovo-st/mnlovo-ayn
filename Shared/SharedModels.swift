@@ -46,6 +46,7 @@ enum WidgetShared {
         var emoji: String
         var at: Date          // today's time
         var done: Bool
+        var secret: Bool? = nil
     }
 
     struct Item: Codable, Hashable, Identifiable {
@@ -54,6 +55,8 @@ enum WidgetShared {
         var due: Date
         var icon: String
         var secret: Bool
+        /// A routine's next time (ticking it off marks today done) rather than a one-off task.
+        var routine: Bool? = nil
     }
 
     struct Payload: Codable {
@@ -162,6 +165,46 @@ enum WidgetShared {
         let g = defaults.data(forKey: key) != nil && groupGranted
         let k = SharedKeychain.read(account: "payload") != nil
         return g && k ? "group+keychain" : g ? "group" : k ? "keychain" : "none"
+    }
+
+    // MARK: Ticked off from the widget
+
+    /// A tap on a widget's ✓ button, waiting for the app to apply it to the vault.
+    struct Pending: Codable, Hashable {
+        var id: String
+        var routine: Bool
+        var at: Date
+    }
+
+    static func pending() -> [Pending] {
+        let a = defaults.data(forKey: "widget.pending").flatMap { try? JSONDecoder().decode([Pending].self, from: $0) } ?? []
+        let b = SharedKeychain.read(account: "pending").flatMap { try? JSONDecoder().decode([Pending].self, from: $0) } ?? []
+        var seen = Set<String>()
+        return (a + b).filter { seen.insert($0.id).inserted }
+    }
+
+    static func setPending(_ list: [Pending]) {
+        let data = (try? JSONEncoder().encode(list)) ?? Data("[]".utf8)
+        defaults.set(data, forKey: "widget.pending")
+        SharedKeychain.write(data, account: "pending")
+    }
+
+    /// Shows the tick straight away and queues it for the app, so the button works even when iOS
+    /// doesn't wake the app up.
+    static func tickLocally(id: String, routine: Bool) {
+        var list = pending()
+        if !list.contains(where: { $0.id == id }) { list.append(Pending(id: id, routine: routine, at: Date())) }
+        setPending(list)
+
+        var p = load()
+        guard p.live else { return }
+        p.items.removeAll { $0.id == id }
+        if let i = p.routines.firstIndex(where: { $0.id == id }), !p.routines[i].done {
+            p.routines[i].done = true
+            p.doneToday = min(p.totalToday, p.doneToday + 1)
+        }
+        p.updated = Date()
+        save(p)
     }
 
     // MARK: Heartbeat — the widget says "I ran, and here's what I saw"

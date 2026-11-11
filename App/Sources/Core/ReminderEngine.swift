@@ -265,8 +265,51 @@ enum ReminderEngine {
     }
 }
 
+/// Applies the ✓ taps made on the widgets to the vault.
+enum WidgetQueue {
+    private static var draining = false
+
+    static func drain() {
+        guard !draining else { return }
+        let list = WidgetShared.pending()
+        guard !list.isEmpty else { return }
+        draining = true
+        defer { draining = false }
+        WidgetShared.setPending([])
+        for t in list {
+            guard let rid = UUID(uuidString: t.id) else { continue }
+            if t.routine {
+                // the day it was tapped, even if the app only gets to it later
+                RemindersStore.update(.real, rid) { r in
+                    guard var ro = r.routine else { return }
+                    let k = Routine.dayKey(t.at)
+                    if !ro.doneDays.contains(k) { ro.doneDays.append(k) }
+                    ro.doneDays = Array(ro.doneDays.suffix(400))
+                    r.routine = ro
+                    r.snoozedUntil = nil
+                }
+            } else {
+                RemindersStore.update(.real, rid) { r in
+                    if let sub = r.subscription, r.kind == .subscription {
+                        r.due = sub.cycle.next(after: r.due)
+                        r.snoozedUntil = nil
+                    } else {
+                        r.done = true
+                        r.doneAt = t.at
+                        r.snoozedUntil = nil
+                    }
+                }
+            }
+        }
+        ReminderEngine.rescheduleAll()
+        LiveActivityManager.sync()
+        NotificationCenter.default.post(name: .aynRemindersChanged, object: nil)
+    }
+}
+
 enum WidgetBridge {
     static func update() {
+        WidgetQueue.drain()   // taps from the widget first, so they don't come back
         let now = Date()
         let list = RemindersStore.load(.real)
             .map { r -> Reminder in
@@ -280,7 +323,8 @@ enum WidgetBridge {
         let items = list.map {
             WidgetShared.Item(id: $0.id.uuidString,
                               title: $0.sensitivity == .secret ? tr("🔒 مهمة سرية", "🔒 Secret task") : $0.title,
-                              due: $0.due, icon: $0.kind.icon, secret: $0.sensitivity == .secret)
+                              due: $0.due, icon: $0.kind.icon, secret: $0.sensitivity == .secret,
+                              routine: $0.isRoutine ? true : nil)
         }
         var payload = WidgetShared.Payload()
         payload.items = Array(items)
@@ -300,7 +344,8 @@ enum WidgetBridge {
                   let at = cal.date(bySettingHour: rt.hour, minute: rt.minute, second: 0, of: now) else { return nil }
             return WidgetShared.RoutineItem(id: r.id.uuidString,
                                             title: r.sensitivity == .secret ? tr("روتين سري", "Secret routine") : r.title,
-                                            emoji: rt.emoji, at: at, done: rt.isDone(on: now))
+                                            emoji: rt.emoji, at: at, done: rt.isDone(on: now),
+                                            secret: r.sensitivity == .secret ? true : nil)
         }
         .sorted { $0.at < $1.at }
 

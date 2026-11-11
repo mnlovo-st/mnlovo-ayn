@@ -89,6 +89,7 @@ targets:
         INFOPLIST_FILE: Widget/Info.plist
         CODE_SIGN_ENTITLEMENTS: Widget/AYNWidget.entitlements
         SKIP_INSTALL: "YES"
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) SAVER_WIDGET"
     info:
       path: Widget/Info.plist
       properties:

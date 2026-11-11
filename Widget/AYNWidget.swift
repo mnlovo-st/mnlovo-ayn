@@ -1,3 +1,4 @@
+import AppIntents
 import WidgetKit
 import SwiftUI
 import ActivityKit
@@ -70,6 +71,36 @@ private struct Linked<Content: View>: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+        }
+    }
+}
+
+// MARK: - The ✓ button
+
+/// Tick a task or routine off right from the widget. Secret ones get a lock instead: tapping the
+/// widget there opens the app, which asks for Face ID first.
+private struct TickButton: View {
+    let id: String
+    let routine: Bool
+    let secret: Bool
+    var tint: Color = .white
+
+    var body: some View {
+        if secret {
+            Image(systemName: "lock.fill")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.35))
+                .frame(width: 22, height: 22)
+        } else {
+            Button(intent: CompleteFromWidgetIntent(id: id, routine: routine)) {
+                Image(systemName: "circle")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(tint.opacity(0.6))
+                    .frame(width: 22, height: 22)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .invalidatableContent()
         }
     }
 }
@@ -181,6 +212,7 @@ struct TasksWidgetView: View {
                                     .lineLimit(1)
                             }
                             Spacer(minLength: 0)
+                            TickButton(id: item.id, routine: item.routine ?? false, secret: item.secret, tint: color(item.due))
                         }
                     }
                     Spacer(minLength: 0)
@@ -194,6 +226,7 @@ struct TasksWidgetView: View {
                             Spacer(minLength: 6)
                             Text(item.due, style: .relative).font(wf(11, .semibold)).foregroundStyle(color(item.due))
                                 .lineLimit(1).multilineTextAlignment(.trailing).frame(maxWidth: 110, alignment: .trailing)
+                            TickButton(id: item.id, routine: item.routine ?? false, secret: item.secret, tint: color(item.due))
                         }
                         .frame(height: 24)
                     }
@@ -633,6 +666,7 @@ struct RoutinesView: View {
                                         .foregroundStyle(r.id == next?.id ? teal : .white.opacity(0.45))
                                 }
                                 Spacer(minLength: 0)
+                                TickButton(id: r.id, routine: true, secret: r.secret ?? false, tint: teal)
                             }
                         }
                     } else {
@@ -644,6 +678,7 @@ struct RoutinesView: View {
                                 Spacer(minLength: 6)
                                 Text(r.at, style: .time).font(wf(11, .semibold))
                                     .foregroundStyle(r.id == next?.id ? teal : .white.opacity(0.45))
+                                TickButton(id: r.id, routine: true, secret: r.secret ?? false, tint: teal)
                             }
                             .frame(height: 22)
                         }
