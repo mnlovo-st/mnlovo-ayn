@@ -18,8 +18,14 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Show Xcode version
-        run: xcodebuild -version
+      - name: Pick the newest Xcode
+        # Xcode 26 brings the iOS 26 SDK, which the scheduled Dynamic Island countdown needs.
+        # Falls back to the image's default if 26 isn't installed.
+        run: |
+          ls -d /Applications/Xcode*.app
+          X=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$X" ]; then sudo xcode-select -s "$X"; fi
+          xcodebuild -version
 
       - name: Check Supabase (info only)
         continue-on-error: true
