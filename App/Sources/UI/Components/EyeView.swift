@@ -614,3 +614,35 @@ struct BrandMark: View {
         .environment(\.layoutDirection, .leftToRight)
     }
 }
+
+/// The app's name as a small badge, built to sit opposite the language button: same height, same
+/// capsule, so the top of the screen reads as one balanced row instead of a loose caption.
+struct BrandBadge: View {
+    var body: some View {
+        HStack(spacing: 8) {
+            ZStack {
+                Circle().fill(Theme.bg.opacity(0.7))
+                Circle().strokeBorder(Theme.brandGradient, lineWidth: 1)
+                BrandMark(size: 17)
+            }
+            .frame(width: 26, height: 26)
+            VStack(alignment: .leading, spacing: -1) {
+                Text("MNLOVO")
+                    .font(Theme.font(12.5, .black))
+                    .foregroundStyle(Theme.brandGradient)
+                Text("SAVER")
+                    .font(Theme.font(8, .heavy))
+                    .tracking(3.2)
+                    .foregroundStyle(Theme.sub)
+            }
+        }
+        .padding(.leading, 5)
+        .padding(.trailing, 13)
+        .frame(height: 36)
+        .background(Capsule().fill(Theme.surfaceHi))
+        .overlay(Capsule().strokeBorder(Theme.stroke))
+        .environment(\.layoutDirection, .leftToRight)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Brand.appName)
+    }
+}

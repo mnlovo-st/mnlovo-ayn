@@ -51,6 +51,7 @@ struct AYNApp: App {
 struct RootView: View {
     @EnvironmentObject var state: AppState
     @Environment(\.scenePhase) private var scenePhase
+    @StateObject private var perms = Permissions.shared
     @AppStorage("sec.allowScreenshots") private var allowShots = true
     @AppStorage("sec.allowRecording") private var allowRecording = true
 
@@ -71,6 +72,14 @@ struct RootView: View {
             case .unlocked:
                 MainTabView()
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
+
+            // Nothing past the lock screen works until notifications, the camera and Face ID are
+            // allowed — whether the account was just created or just signed back into.
+            if state.phase == .unlocked && perms.checked && !perms.allGranted {
+                PermissionsGate(perms: perms)
+                    .transition(.opacity)
+                    .zIndex(40)
             }
 
             if state.privacyCover || (state.screenCaptured && !allowRecording) {
@@ -98,8 +107,12 @@ struct RootView: View {
             if newValue == .active {
                 ScreenShield.shared.install()
                 LiveActivityManager.sync()
+                Task { await perms.refresh() }   // back from Settings after allowing something
             }
         }
+        .task { await perms.refresh() }
+        .onChange(of: state.phase) { _, p in if p == .unlocked { Task { await perms.refresh() } } }
+        .animation(.easeInOut(duration: 0.3), value: perms.allGranted)
         .onAppear {
             // The window needs a moment on screen before its layer can be moved.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { ScreenShield.shared.install() }

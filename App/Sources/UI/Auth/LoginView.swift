@@ -57,8 +57,7 @@ struct LoginView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            BrandMark(size: 28)
-            Text(Brand.appName).font(Theme.font(13, .heavy)).foregroundStyle(Theme.sub).tracking(1.5)
+            BrandBadge()
             Spacer()
             LanguageToggle()
         }

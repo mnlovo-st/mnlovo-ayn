@@ -12,7 +12,7 @@ struct SettingsView: View {
     @AppStorage("sec.allowRecording") private var allowRecording = true
     @AppStorage("sec.screenshotAlert") private var screenshotAlert = true
     @AppStorage("sec.sectionBiometric") private var sectionBio = false
-    @AppStorage("sec.intruder") private var intruder = false
+    @AppStorage("sec.intruder") private var intruder = true
 
     @State private var sheet: SettingsSheet?
     @State private var confirmErase = false

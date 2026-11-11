@@ -460,7 +460,9 @@ struct SignUpFlow: View {
         loading = true
         defer { loading = false }
         if notifications { _ = await ReminderEngine.requestPermission() }
-        if intruder { IntruderCam.enabled = await IntruderCam.requestPermission() } else { IntruderCam.enabled = false }
+        // Keep the switch on even if the camera is refused here: the photo needs both, and the
+        // permissions screen asks for the camera again, so a later "allow" just works.
+        if intruder { _ = await IntruderCam.requestPermission(); IntruderCam.enabled = true } else { IntruderCam.enabled = false }
         // The trustee can only be picked once Telegram is linked, so remember the intent.
         UserDefaults.standard.set(wantsLegacy, forKey: "legacy.wanted")
         var n = input

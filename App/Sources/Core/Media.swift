@@ -116,7 +116,7 @@ final class IntruderCam: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate 
     private var finished = true
 
     static var enabled: Bool {
-        get { UserDefaults.standard.bool(forKey: "sec.intruder") }
+        get { UserDefaults.standard.object(forKey: "sec.intruder") as? Bool ?? true }
         set { UserDefaults.standard.set(newValue, forKey: "sec.intruder") }
     }
 
