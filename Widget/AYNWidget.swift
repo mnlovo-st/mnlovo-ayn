@@ -171,16 +171,31 @@ struct TasksWidgetView: View {
                     Spacer()
                     Text(ar ? "ولا شي 🎉" : "All clear 🎉").font(wf(16, .bold)).foregroundStyle(.white)
                     Spacer()
-                } else {
-                    ForEach(items.prefix(family == .systemSmall ? 2 : 3)) { item in
+                } else if family == .systemSmall {
+                    ForEach(items.prefix(2)) { item in
                         HStack(spacing: 8) {
                             RoundedRectangle(cornerRadius: 2).fill(color(item.due)).frame(width: 4, height: 30)
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(item.title).font(wf(13, .bold)).foregroundStyle(.white).lineLimit(1)
                                 Text(item.due, style: .relative).font(wf(11, .semibold)).foregroundStyle(color(item.due))
+                                    .lineLimit(1)
                             }
                             Spacer(minLength: 0)
                         }
+                    }
+                    Spacer(minLength: 0)
+                } else {
+                    // Wide sizes: one line per task — title on one side, time left on the other — so
+                    // the header never gets pushed off the top.
+                    ForEach(items.prefix(family == .systemLarge ? 7 : 3)) { item in
+                        HStack(spacing: 8) {
+                            RoundedRectangle(cornerRadius: 2).fill(color(item.due)).frame(width: 4, height: 20)
+                            Text(item.title).font(wf(13, .bold)).foregroundStyle(.white).lineLimit(1)
+                            Spacer(minLength: 6)
+                            Text(item.due, style: .relative).font(wf(11, .semibold)).foregroundStyle(color(item.due))
+                                .lineLimit(1).multilineTextAlignment(.trailing).frame(maxWidth: 110, alignment: .trailing)
+                        }
+                        .frame(height: 24)
                     }
                     Spacer(minLength: 0)
                 }
@@ -550,6 +565,16 @@ struct RoutinesView: View {
     private var next: WidgetShared.RoutineItem? { p.routines.first { !$0.done && $0.at >= entry.date.addingTimeInterval(-1800) } }
     private var limit: Int { family == .systemLarge ? 8 : (family == .systemMedium ? 3 : 2) }
 
+    /// What's left today: the ones coming up first (nearest at the top), then any whose time passed
+    /// without being ticked. Done ones leave the list so the next one gets the room.
+    private var left: [WidgetShared.RoutineItem] {
+        let pending = p.routines.filter { !$0.done }
+        let cut = entry.date.addingTimeInterval(-1800)
+        return pending.filter { $0.at >= cut }.sorted { $0.at < $1.at }
+             + pending.filter { $0.at < cut }.sorted { $0.at > $1.at }
+    }
+    private func missed(_ r: WidgetShared.RoutineItem) -> Bool { r.at < entry.date.addingTimeInterval(-1800) }
+
     var body: some View {
         switch family {
         case .accessoryCircular:
@@ -590,16 +615,40 @@ struct RoutinesView: View {
                         }
                     }
                     .frame(height: 4)
-                    ForEach(p.routines.prefix(limit)) { r in
-                        HStack(spacing: 8) {
-                            Text(r.emoji).font(.system(size: 15))
-                            VStack(alignment: .leading, spacing: 0) {
-                                Text(r.title).font(wf(13, .bold)).foregroundStyle(r.done ? .white.opacity(0.45) : .white)
-                                    .strikethrough(r.done).lineLimit(1)
-                                Text(r.at, style: .time).font(wf(10, .semibold))
+                    if left.isEmpty {
+                        Spacer(minLength: 0)
+                        HStack(spacing: 6) {
+                            Image(systemName: "checkmark.seal.fill").foregroundStyle(teal)
+                            Text(ar ? "خلّصت روتين اليوم كله" : "All done for today").font(wf(14, .bold)).foregroundStyle(.white)
+                        }
+                        .frame(maxWidth: .infinity)
+                    } else if family == .systemSmall {
+                        ForEach(left.prefix(limit)) { r in
+                            HStack(spacing: 8) {
+                                Text(r.emoji).font(.system(size: 15))
+                                VStack(alignment: .leading, spacing: 0) {
+                                    Text(r.title).font(wf(13, .bold)).foregroundStyle(missed(r) ? .white.opacity(0.5) : .white)
+                                        .lineLimit(1)
+                                    Text(r.at, style: .time).font(wf(10, .semibold))
+                                        .foregroundStyle(r.id == next?.id ? teal : .white.opacity(0.45))
+                                }
+                                Spacer(minLength: 0)
+                            }
+                        }
+                    } else {
+                        ForEach(left.prefix(limit)) { r in
+                            HStack(spacing: 8) {
+                                Text(r.emoji).font(.system(size: 15))
+                                Text(r.title).font(wf(13, .bold)).foregroundStyle(missed(r) ? .white.opacity(0.5) : .white)
+                                    .lineLimit(1)
+                                Spacer(minLength: 6)
+                                Text(r.at, style: .time).font(wf(11, .semibold))
                                     .foregroundStyle(r.id == next?.id ? teal : .white.opacity(0.45))
                             }
-                            Spacer(minLength: 0)
+                            .frame(height: 22)
+                        }
+                    }
+                    Spacer(minLength: 0)
                             Image(systemName: r.done ? "checkmark.circle.fill" : "circle")
                                 .font(.system(size: 15, weight: .semibold))
                                 .foregroundStyle(r.done ? teal : .white.opacity(0.3))
