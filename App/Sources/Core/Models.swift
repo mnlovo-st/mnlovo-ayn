@@ -329,6 +329,8 @@ struct IntruderEvent: Codable, Identifiable {
     var date = Date()
     var reason: Reason
     var photo: Data?
+    /// Which wrong attempt in a row this was. Optional so older log entries still load.
+    var attempt: Int?
 
     var title: String {
         switch reason {

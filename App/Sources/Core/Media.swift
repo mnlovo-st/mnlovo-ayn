@@ -155,7 +155,10 @@ final class IntruderCam: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate 
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
         guard !finished, Date().timeIntervalSince(started) > 0.8,
               let pb = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
-        var ci = CIImage(cvPixelBuffer: pb).oriented(.upMirrored)
+        // The phone is held upright, so the photo must be too. When the connection couldn't rotate
+        // the frames itself they arrive sideways (wider than tall); turn those here.
+        let raw = CIImage(cvPixelBuffer: pb)
+        var ci = raw.oriented(raw.extent.width > raw.extent.height ? .leftMirrored : .upMirrored)
         let longSide = max(ci.extent.width, ci.extent.height)
         if longSide > 1600 {
             let k = 1600 / longSide

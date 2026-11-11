@@ -249,11 +249,12 @@ final class TelegramService {
     }
 
     /// Sends an intruder snapshot straight to Telegram the moment it's taken (works while the app is locked).
-    func sendIntruderAlert(photo: Data?, reason: String) {
+    func sendIntruderAlert(photo: Data?, reason: String, attempt: Int = 0) {
         guard settings.intruderAlerts, cloudReady, !settings.targets.isEmpty else { return }
         let when = Fmt.date(Date())
-        let caption = tr("🚨 <b>محاولة دخول للتطبيق</b>\n\n\(reason)\n\n<i>#متطفل · \(Self.esc(when))</i>",
-                         "🚨 <b>App access attempt</b>\n\n\(reason)\n\n<i>#intruder · \(Self.esc(when))</i>")
+        let nth = attempt > 0 ? tr(" · المحاولة رقم \(attempt)", " · attempt \(attempt)") : ""
+        let caption = tr("🚨 <b>محاولة دخول للتطبيق</b>\n\n\(reason)\(nth)\n\n<i>#متطفل · \(Self.esc(when))</i>",
+                         "🚨 <b>App access attempt</b>\n\n\(reason)\(nth)\n\n<i>#intruder · \(Self.esc(when))</i>")
         Task {
             var payload: [String: Any] = ["caption": caption]
             if let photo { payload["photo"] = photo.base64EncodedString() }
