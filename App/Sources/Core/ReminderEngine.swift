@@ -410,7 +410,28 @@ enum LiveActivityManager {
                                    badge: SmartIsland.decide(t).badge)
     }
 
+    /// Bump when the island's look changes: countdowns already running keep the old drawing until
+    /// they end, so after an update they're ended and started again in the new one.
+    private static let layoutVersion = 3
+    private static var restarting = false
+
     static func sync() {
+        let lv = UserDefaults.standard.integer(forKey: "la.layout")
+        if lv != layoutVersion, !restarting {
+            UserDefaults.standard.set(layoutVersion, forKey: "la.layout")
+            let running = Activity<ReminderActivityAttributes>.activities
+            if !running.isEmpty {
+                restarting = true
+                Task {
+                    for a in running { await a.end(nil, dismissalPolicy: .immediate) }
+                    await MainActor.run {
+                        restarting = false
+                        sync()
+                    }
+                }
+                return
+            }
+        }
         let now = Date()
         let all = enabled ? eligible(now: now) : []
         // Running now: its window has opened. Scheduled ahead (iOS 26+): the next few after that.

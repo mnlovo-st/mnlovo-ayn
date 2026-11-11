@@ -285,10 +285,28 @@ struct ReminderLiveActivity: Widget {
                         }
                         .progressViewStyle(.linear)
                         .tint(LinearGradient(colors: [teal, indigo], startPoint: .leading, endPoint: .trailing))
-                        HStack(spacing: 5) {
+                        HStack(spacing: 6) {
                             Image(systemName: "eye.fill").font(.system(size: 10, weight: .bold)).foregroundStyle(teal)
-                            Text(ar ? "خلصتها؟ افتح التطبيق وأكّد عشان أوقف التذكير" : "Done? Open the app and confirm to stop reminders")
-                                .font(wf(11, .medium)).foregroundStyle(.white.opacity(0.6)).lineLimit(1)
+                            if a.title.hasPrefix("🔒") {
+                                // secret: confirming needs Face ID, so it's done in the app
+                                Text(ar ? "خلصتها؟ افتح التطبيق وأكّد" : "Done? Open the app to confirm")
+                                    .font(wf(11, .medium)).foregroundStyle(.white.opacity(0.6)).lineLimit(1)
+                                Spacer(minLength: 0)
+                            } else {
+                                Text(ar ? "خلصتها؟" : "Done?")
+                                    .font(wf(12, .semibold)).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
+                                Spacer(minLength: 0)
+                                Button(intent: CompleteFromWidgetIntent(id: a.reminderID, routine: false)) {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "checkmark").font(.system(size: 11, weight: .heavy))
+                                        Text(ar ? "تم" : "Done").font(wf(12, .bold))
+                                    }
+                                    .foregroundStyle(night)
+                                    .padding(.horizontal, 14).padding(.vertical, 5)
+                                    .background(Capsule().fill(LinearGradient(colors: [teal, indigo], startPoint: .leading, endPoint: .trailing)))
+                                }
+                                .buttonStyle(.plain)
+                            }
                         }
                         .environment(\.layoutDirection, ar ? .rightToLeft : .leftToRight)
                     }
