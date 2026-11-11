@@ -37,6 +37,10 @@ jobs:
             echo "storage bucket check (401/400 expected without login): $(curl -s -o /dev/null -w '%{http_code}' -H "apikey: $KEY" "$URL/storage/v1/bucket/backups")"
           fi
 
+      - name: Check the wording (info only)
+        continue-on-error: true
+        run: python3 tools/wording.py
+
       - name: Install XcodeGen
         run: brew install xcodegen
 

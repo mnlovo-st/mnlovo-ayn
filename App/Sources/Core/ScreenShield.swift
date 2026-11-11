@@ -19,8 +19,9 @@ final class ScreenShield {
     private weak var window: UIWindow?
     private(set) var active = false
 
-    static var allowScreenshots: Bool { UserDefaults.standard.bool(forKey: "sec.allowScreenshots") }
-    static var allowRecording: Bool { UserDefaults.standard.bool(forKey: "sec.allowRecording") }
+    /// Both allowed until the person turns protection on in Settings.
+    static var allowScreenshots: Bool { UserDefaults.standard.object(forKey: "sec.allowScreenshots") as? Bool ?? true }
+    static var allowRecording: Bool { UserDefaults.standard.object(forKey: "sec.allowRecording") as? Bool ?? true }
 
     /// Puts the window inside the secure layer once, then applies the current settings.
     func install() {

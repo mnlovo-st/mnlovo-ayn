@@ -8,8 +8,8 @@ struct SettingsView: View {
     @AppStorage("fx.sound") private var sound = false
     @AppStorage("fx.haptics") private var haptics = true
     @AppStorage("fx.liveActivity") private var liveActivity = true
-    @AppStorage("sec.allowScreenshots") private var allowShots = false
-    @AppStorage("sec.allowRecording") private var allowRecording = false
+    @AppStorage("sec.allowScreenshots") private var allowShots = true
+    @AppStorage("sec.allowRecording") private var allowRecording = true
     @AppStorage("sec.screenshotAlert") private var screenshotAlert = true
     @AppStorage("sec.sectionBiometric") private var sectionBio = false
     @AppStorage("sec.intruder") private var intruder = false

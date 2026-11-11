@@ -460,7 +460,7 @@ struct RemindersIntro: View {
         let items: [(String, String, Color)] = [
             (tr("باقي ٣ أيام", "3 days left"), tr("خطط لها من الحين 💪", "Plan it now 💪"), Theme.ok),
             (tr("باقي يومين", "2 days left"), tr("لا تخليها لآخر لحظة", "Don't leave it late"), Theme.warn),
-            (tr("باقي يوم", "1 day left"), tr("بكرة آخر يوم ⚠️", "Tomorrow's the last day ⚠️"), Color(hex: 0xFF7A45)),
+            (tr("باقي يوم", "1 day left"), tr("باجر آخر يوم ⚠️", "Tomorrow's the last day ⚠️"), Color(hex: 0xFF7A45)),
             (tr("اليوم آخر يوم", "Last day"), tr("سويتها؟", "Done yet?"), Theme.danger),
             (tr("اليوم آخر يوم", "Last day"), tr("للحين؟ 👀", "Still? 👀"), Theme.danger),
             (tr("خلص الوقت", "Time's up"), tr("⏰ سويتها؟", "⏰ Did you?"), Theme.danger)]

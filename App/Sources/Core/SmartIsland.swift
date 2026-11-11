@@ -23,7 +23,7 @@ enum SmartIsland {
                                   "assignment", "project", "report", "essay", "research", "presentation", "lab", "paper", "thesis"]
     private static let exams = ["امتحان", "اختبار", "كويز", "ميدترم", "فاينل",
                                 "exam", "quiz", "midterm", "final", "test"]
-    private static let quick = ["اتصل", "كلم", "رد على", "ادفع", "سدد", "حول", "طرش", "ارسل", "جدد",
+    private static let quick = ["اتصل", "كلم", "رد على", "ادفع", "سدد", "حول", "طرش", "ارسل", "جدد",  // wording:ignore — words people type, not words we show
                                 "call", "pay", "reply", "send", "text", "renew", "transfer"]
 
     /// Lower-case, strip Arabic diacritics and fold the letter forms people type interchangeably,

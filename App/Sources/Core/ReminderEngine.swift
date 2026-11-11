@@ -94,7 +94,7 @@ enum ReminderEngine {
             switch days {
             case 3: body = tr("باقي ٣ أيام على التسليم. خطط لها من الحين 💪", "3 days left. Plan it now 💪")
             case 2: body = tr("باقي يومين! لا تخليها لآخر لحظة.", "2 days left! Don't leave it to the last minute.")
-            default: body = tr("باقي يوم واحد ⚠️ بكرة آخر يوم.", "1 day left ⚠️ Tomorrow is the last day.")
+            default: body = tr("باقي يوم واحد ⚠️ باجر آخر يوم.", "1 day left ⚠️ Tomorrow is the last day.")
             }
             out.append(Planned(date: d, title: name, body: body))
         }
@@ -138,7 +138,7 @@ enum ReminderEngine {
         f.timeStyle = .short
         let at = f.string(from: r.due)
         var out = [Planned(date: r.due.addingTimeInterval(-86400), title: name,
-                           body: tr("📅 عندك موعد بكرة الساعة \(at).", "📅 You have an appointment tomorrow at \(at)."))]
+                           body: tr("📅 عندك موعد باجر الساعة \(at).", "📅 You have an appointment tomorrow at \(at)."))]
         // That morning at 8, or two hours before if it's an early one.
         let cal = Calendar.current
         var morning = cal.date(bySettingHour: 8, minute: 0, second: 0, of: r.due) ?? r.due

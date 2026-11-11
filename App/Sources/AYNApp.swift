@@ -51,8 +51,8 @@ struct AYNApp: App {
 struct RootView: View {
     @EnvironmentObject var state: AppState
     @Environment(\.scenePhase) private var scenePhase
-    @AppStorage("sec.allowScreenshots") private var allowShots = false
-    @AppStorage("sec.allowRecording") private var allowRecording = false
+    @AppStorage("sec.allowScreenshots") private var allowShots = true
+    @AppStorage("sec.allowRecording") private var allowRecording = true
 
     var body: some View {
         ZStack {
