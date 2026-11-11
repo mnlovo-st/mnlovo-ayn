@@ -227,6 +227,59 @@ final class SupabaseClient {
         }
     }
 
+    // MARK: Username (email code first, then locked for 90 days — see supabase/username.sql)
+
+    enum UsernameChange {
+        case ok(next: Date)
+        case locked(until: Date)
+        case needsCode, tooShort, same, failed(String)
+    }
+
+    private static func isoDate(_ any: Any?) -> Date? {
+        guard let s = any as? String else { return nil }
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = f.date(from: s) { return d }
+        f.formatOptions = [.withInternetDateTime]
+        return f.date(from: s)
+    }
+
+    /// When the name can be changed again (nil = now).
+    func usernameUnlockDate() async -> Date? {
+        guard let s = try? await validSession(),
+              let r = try? await request("/rest/v1/saver_accounts?select=username_changed_at&user_id=eq.\(s.userID)",
+                                         method: "GET", bearer: s.accessToken),
+              (200..<300).contains(r.1.statusCode),
+              let rows = try? JSONSerialization.jsonObject(with: r.0) as? [[String: Any]],
+              let changed = Self.isoDate(rows.first?["username_changed_at"]) else { return nil }
+        let next = changed.addingTimeInterval(90 * 86400)
+        return next > Date() ? next : nil
+    }
+
+    /// Call right after `verifyEmailCode` — the server checks that this session came from that code.
+    func changeUsername(_ name: String) async -> UsernameChange {
+        do {
+            let s = try await validSession()
+            let (data, http) = try await request("/rest/v1/rpc/saver_change_username", json: ["p_name": name], bearer: s.accessToken)
+            guard (200..<300).contains(http.statusCode),
+                  let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                return .failed(message(from: data, status: http.statusCode))
+            }
+            if obj["ok"] as? Bool == true {
+                return .ok(next: Self.isoDate(obj["next_at"]) ?? Date().addingTimeInterval(90 * 86400))
+            }
+            switch obj["error"] as? String {
+            case "locked": return .locked(until: Self.isoDate(obj["next_at"]) ?? Date().addingTimeInterval(90 * 86400))
+            case "code": return .needsCode
+            case "length": return .tooShort
+            case "same": return .same
+            default: return .failed(obj["error"] as? String ?? "")
+            }
+        } catch {
+            return .failed(error.localizedDescription)
+        }
+    }
+
     // MARK: Backup storage (bucket "backups", path <user-id>/vault.saver)
 
     func uploadBackup(_ data: Data) async throws {

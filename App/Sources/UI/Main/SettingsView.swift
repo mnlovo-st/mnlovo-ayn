@@ -20,7 +20,7 @@ struct SettingsView: View {
     @State private var secretTaps = 0
 
     enum SettingsSheet: String, Identifiable {
-        case password, section, twoFA, recovery, duress, intruders, cloudSetup, backup, telegram, delete, desk, cipher, legacy, widgets
+        case password, section, twoFA, recovery, duress, intruders, cloudSetup, backup, telegram, delete, desk, cipher, legacy, widgets, username
         var id: String { rawValue }
     }
 
@@ -32,6 +32,11 @@ struct SettingsView: View {
                 if let p = state.profile { profileCard(p) }
 
                 group(tr("الحساب", "Account"), "person.crop.circle") {
+                    if !state.isDecoy {
+                        row("person.text.rectangle.fill", tr("تغيير اسم المستخدم", "Change username"),
+                            value: state.profile?.username ?? "") { sheet = .username }
+                        divider
+                    }
                     row("key.fill", tr("تغيير كلمة السر", "Change password")) { sheet = .password }
                     divider
                     row("circle.grid.3x3.fill", tr("رمز الأقسام", "Section passcode"), value: state.sectionKind.title) { sheet = .section }
@@ -133,8 +138,6 @@ struct SettingsView: View {
                     row("square.grid.2x2.fill", tr("أضف ودجت للشاشة الرئيسية", "Add a widget to the Home Screen"),
                         value: tr("٧ أنواع", "7 kinds")) { sheet = .widgets }
                     divider
-                    row("bell.and.waves.left.and.right.fill", tr("إشعار تجريبي", "Test notification")) { Task { await testNotification() } }
-                    divider
                     VStack(alignment: .leading, spacing: 8) {
                         Text(tr("Siri والاختصارات: «Add a reminder in MNLOVO SAVER»", "Siri & Shortcuts: “Add a reminder in MNLOVO SAVER”"))
                             .font(Theme.font(13, .semibold)).foregroundStyle(Theme.sub)
@@ -191,6 +194,11 @@ struct SettingsView: View {
                     Text("\(Brand.appName) · v2.0").font(Theme.font(14, .heavy)).foregroundStyle(Theme.sub)
                     Text(tr("AES-256 · Secure Enclave · مشفّر على جهازك", "AES-256 · Secure Enclave · encrypted on device"))
                         .font(Theme.font(11)).foregroundStyle(Theme.faint)
+                    Image("ProudUAE")
+                        .resizable().scaledToFit()
+                        .frame(width: 84)
+                        .padding(.top, 10)
+                        .accessibilityLabel(tr("فخورين بالإمارات", "Proud of UAE"))
                     Text(Brand.copyright).font(Theme.font(12, .bold)).foregroundStyle(Theme.faint)
                         .onTapGesture {
                             secretTaps += 1
@@ -219,6 +227,7 @@ struct SettingsView: View {
                 case .cipher: CipherToolView()
                 case .legacy: LegacyView()
                 case .widgets: WidgetGuideSheet()
+                case .username: UsernameSheet()
                 }
             }
             .environmentObject(state)

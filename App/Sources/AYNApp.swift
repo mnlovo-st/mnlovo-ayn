@@ -209,6 +209,12 @@ struct PrivacyCover: View {
 
                 Spacer()
 
+                Image("ProudUAE")
+                    .resizable().scaledToFit()
+                    .frame(width: 84)
+                    .opacity(0.85)
+                    .padding(.bottom, 12)
+
                 Text(Brand.copyright)
                     .font(Theme.font(11, .semibold))
                     .foregroundStyle(Theme.text.opacity(0.22))

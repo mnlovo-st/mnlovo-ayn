@@ -356,6 +356,8 @@ struct Profile: Codable {
     var sectionKind: String?
     var inboxPrivateKey: Data
     var remindersKey: Data
+    /// Last time the username was changed (it's locked for 90 days after that).
+    var usernameChangedAt: Date?
 }
 
 /// Plain metadata (no secrets — only wrapped keys and salted hashes).

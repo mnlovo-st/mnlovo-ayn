@@ -118,10 +118,9 @@ struct WidgetGuideSheet: View {
 
 /// Is the data actually reaching the widget? The app writes it two ways (App Group and a shared
 /// keychain item) and the widget writes back a heartbeat each time it runs, so this card can say
-/// which way works on this phone — and "نسخ التقرير" hands over the details when neither does.
+/// whether the data is getting through.
 struct WidgetLinkStatus: View {
     @State private var beat: WidgetShared.Heartbeat?
-    @State private var copied = false
     @State private var tick = 0
 
     private var groupOK: Bool { WidgetShared.groupGranted }
@@ -144,11 +143,6 @@ struct WidgetLinkStatus: View {
                 }
                 Spacer(minLength: 0)
             }
-            HStack(spacing: 8) {
-                chip("App Group", groupOK)
-                chip("Keychain", keychainOK)
-                chip(tr("الودجت", "Widget"), beat.map { $0.source != "none" } ?? false)
-            }
             HStack(spacing: 10) {
                 Button {
                     Haptics.tap()
@@ -159,16 +153,6 @@ struct WidgetLinkStatus: View {
                         .font(Theme.font(12, .bold)).foregroundStyle(Theme.accent)
                 }
                 Spacer()
-                Button {
-                    UIPasteboard.general.string = report
-                    Haptics.tap()
-                    copied = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { copied = false }
-                } label: {
-                    Label(copied ? tr("انّسخ ✓", "Copied ✓") : tr("نسخ التقرير", "Copy report"),
-                          systemImage: copied ? "checkmark" : "doc.on.doc")
-                        .font(Theme.font(12, .bold)).foregroundStyle(Theme.sub)
-                }
             }
             .buttonStyle(PressScale())
         }
@@ -222,27 +206,13 @@ struct WidgetLinkStatus: View {
             let t = beat.map { $0.at.formatted(date: .omitted, time: .shortened) } ?? ""
             return tr("آخر مرة تحدّث \(t)", "Last updated \(t)")
         case .silent:
-            return tr("اضغط «نسخ التقرير» وطرشه لنا عشان نشوف شو اللي ناقص.", "Tap “Copy report” and send it to us.")
+            return tr("سكّر التطبيق وافتحه، وإذا بعده جي كلّمنا من الدعم الفني.", "Close and reopen the app; if it stays like this, contact support.")
         case .waiting:
             return tr("حط أي ودجت عالشاشة الرئيسية، وارجع هني بعد دقيقة.", "Add any widget to the Home Screen, then come back in a minute.")
         case .blocked:
-            return tr("التطبيق تثبّت بتوقيع ما يسمح يشارك البيانات مع الودجت. اضغط «نسخ التقرير» وطرشه لنا.",
-                      "This install was signed without data sharing. Tap “Copy report” and send it to us.")
+            return tr("التطبيق تثبّت بتوقيع ما يسمح يشارك البيانات مع الودجت. كلّمنا من الدعم الفني.",
+                      "This install was signed without data sharing. Please contact support.")
         }
-    }
-
-    private var report: String {
-        let b = beat
-        return """
-        MNLOVO SAVER widget report
-        app: \(Bundle.main.bundleIdentifier ?? "-")  v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "-")
-        profile: \(Provision.hasProfile ? "yes" : "no")  team: \(Provision.teamID ?? "-")
-        group: \(WidgetShared.appGroup)  granted: \(groupOK)
-        profile groups: \(Provision.appGroups.joined(separator: ", "))
-        keychain group: \(SharedKeychain.group ?? "-")  status: \(WidgetShared.lastKeychainStatus)
-        profile keychain: \(Provision.keychainGroups.joined(separator: ", "))
-        widget beat: \(b.map { "\($0.at.formatted()) via \($0.source) items \($0.items) routines \($0.routines) granted \($0.groupGranted) team \($0.team)" } ?? "none")
-        """
     }
 }
 

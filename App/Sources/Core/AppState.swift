@@ -79,6 +79,9 @@ struct BackupPayload: Codable {
     var files: [VaultFile]
     var blobs: [String: Data]
     var reminders: [Reminder]
+    /// The duress vault exactly as it sits on the phone (already encrypted with its own password),
+    /// so signing out and back in doesn't lose it.
+    var decoy: [String: Data]? = nil
 }
 
 @MainActor
@@ -449,7 +452,13 @@ final class AppState: ObservableObject {
 
     @discardableResult
     private func openVault(_ s: VaultSpace, key: SymmetricKey, profile p: Profile? = nil) -> Bool {
-        guard let prof = p ?? VaultStorage.load(Profile.self, "profile.enc", space: s, key: key) else { return false }
+        guard var prof = p ?? VaultStorage.load(Profile.self, "profile.enc", space: s, key: key) else { return false }
+        // The duress vault has to wear the same name as the real one, or it gives itself away.
+        if s == .decoy, let realName = VaultStorage.loadMeta(.real)?.displayName, prof.username != realName {
+            prof.username = realName
+            try? VaultStorage.save(prof, "profile.enc", space: .decoy, key: key)
+            if var m = VaultStorage.loadMeta(.decoy) { m.displayName = realName; try? VaultStorage.saveMeta(m, .decoy) }
+        }
         masterKey = key
         space = s
         profile = prof
@@ -694,10 +703,28 @@ final class AppState: ObservableObject {
         RemindersStore.installKey(remKey, space: .decoy)
         RemindersStore.save([], .decoy)
         objectWillChange.send()
+        scheduleBackup(delay: 1)   // the backup carries it, so it survives signing out and back in
     }
 
     func removeDuress() {
         VaultStorage.wipe(.decoy)
+        objectWillChange.send()
+        scheduleBackup(delay: 1)
+    }
+
+    // MARK: - Username
+
+    /// After the server accepted the new name (email code + 90-day rule).
+    func applyNewUsername(_ name: String) {
+        guard space == .real, var prof = profile else { return }
+        prof.username = name
+        prof.usernameChangedAt = Date()
+        profile = prof
+        saveProfile()
+        if var meta = VaultStorage.loadMeta(.real) {
+            meta.displayName = name
+            try? VaultStorage.saveMeta(meta, .real)
+        }
         objectWillChange.send()
     }
 
@@ -1030,8 +1057,15 @@ final class AppState: ObservableObject {
                 }
             }
         }
-        let payload = BackupPayload(profile: prof, accounts: accounts, notes: notes, files: included,
+        var payload = BackupPayload(profile: prof, accounts: accounts, notes: notes, files: included,
                                     blobs: blobs, reminders: reminders)
+        if space == .real && VaultStorage.exists(.decoy) {
+            var d: [String: Data] = [:]
+            for name in ["meta.json", "profile.enc", "accounts.enc", "notes.enc", "files.enc", "reminders.enc"] {
+                if let raw = try? Data(contentsOf: VaultStorage.dir(.decoy).appendingPathComponent(name)) { d[name] = raw }
+            }
+            if d["meta.json"] != nil && d["profile.enc"] != nil { payload.decoy = d }
+        }
         return try await Task.detached(priority: .utility) { () -> Data in
             let enc = PropertyListEncoder()
             enc.outputFormat = .binary
@@ -1057,7 +1091,19 @@ final class AppState: ObservableObject {
         // Photos/files on this phone encrypted with the same vault key are kept.
         let sameVault = VaultStorage.loadMeta(.real).map { $0.inboxPublicKey == bundle.meta.inboxPublicKey } ?? false
         let keptFiles: [VaultFile] = sameVault ? (VaultStorage.load([VaultFile].self, "files.enc", space: .real, key: mk) ?? []) : []
-        if !sameVault { VaultStorage.wipe(.real) }
+        if !sameVault {
+            VaultStorage.wipe(.real)
+            VaultStorage.wipe(.decoy)   // another account's duress vault must not stay behind
+        }
+        if let decoy = payload.decoy, decoy["meta.json"] != nil {
+            VaultStorage.wipe(.decoy)
+            let dir = VaultStorage.dir(.decoy)
+            for (name, raw) in decoy where !name.contains("/") {
+                try? raw.write(to: dir.appendingPathComponent(name),
+                               options: [.atomic, name == "meta.json" || name == "reminders.enc"
+                                         ? .completeFileProtectionUntilFirstUserAuthentication : .completeFileProtection])
+            }
+        }
         try VaultStorage.saveMeta(bundle.meta, .real)
         try VaultStorage.save(payload.profile, "profile.enc", space: .real, key: mk)
         try VaultStorage.save(payload.accounts, "accounts.enc", space: .real, key: mk)

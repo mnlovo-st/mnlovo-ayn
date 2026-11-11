@@ -332,8 +332,8 @@ struct VaultIntro: View {
                  tr("لو أحد ضغط عليك، تعطيه الكلمة المزيّفة: التطبيق يفتح على خزنة فاضية وكل شي الحقيقي مخفي.",
                     "If someone pressures you, give them the decoy: the app opens on an empty vault and the real one stays hidden.")),
                 (tr("وأصوّر أي أحد يحاول", "And I photograph whoever tries"),
-                 tr("ثلاث محاولات خاطئة = صورة بالكاميرا الأمامية مع الوقت، تنحفظ لك وتوصل تيليجرامك فوراً.",
-                    "Three wrong tries = a front-camera photo with a timestamp, kept for you and sent straight to your Telegram."))
+                 tr("من ثاني محاولة غلط تنصوّر بالكاميرا الأمامية مع الوقت، تنحفظ لك وتوصلك على تيليجرام فوراً.",
+                    "From the second wrong try: a front-camera photo with the time, kept for you and sent straight to your Telegram."))
             ],
             beats: [4, 4, 3, 4],
             finishIcon: "lock.shield.fill",
@@ -436,7 +436,7 @@ struct VaultIntro: View {
         VStack(spacing: 9) {
             Spacer()
             HStack(spacing: 5) {
-                ForEach(0..<3, id: \.self) { i in
+                ForEach(0..<2, id: \.self) { i in
                     Image(systemName: step > i ? "xmark.circle.fill" : "circle")
                         .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(step > i ? Theme.danger : Theme.faint)
@@ -445,18 +445,18 @@ struct VaultIntro: View {
             // the "CCTV" frame the app actually stamps
             ZStack {
                 RoundedRectangle(cornerRadius: 10).fill(Color.black.opacity(0.75))
-                if step >= 3 {
+                if step >= 2 {
                     Image(systemName: "person.fill.questionmark")
                         .font(.system(size: 30)).foregroundStyle(Theme.faint)
                 }
                 VStack {
                     HStack {
-                        Text(step >= 3 ? "● REC" : "").font(.system(size: 7, weight: .black)).foregroundStyle(Theme.danger)
+                        Text(step >= 2 ? "● REC" : "").font(.system(size: 7, weight: .black)).foregroundStyle(Theme.danger)
                         Spacer()
                     }
                     Spacer()
                     HStack {
-                        Text(step >= 3 ? "09:41 · 3 \(tr("محاولات", "tries"))" : "")
+                        Text(step >= 2 ? "09:41 · \(tr("المحاولة رقم 2", "Attempt no. 2"))" : "")
                             .font(.system(size: 7, weight: .bold, design: .monospaced)).foregroundStyle(.white.opacity(0.8))
                         Spacer()
                     }
@@ -464,9 +464,9 @@ struct VaultIntro: View {
                 .padding(6)
             }
             .frame(height: 96)
-            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.danger.opacity(step >= 3 ? 0.7 : 0.2), lineWidth: 1.5))
-            if step >= 4 {
-                Label(tr("انطرشت تيليجرامك ✓", "Sent to your Telegram ✓"), systemImage: "paperplane.fill")
+            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.danger.opacity(step >= 2 ? 0.7 : 0.2), lineWidth: 1.5))
+            if step >= 3 {
+                Label(tr("وصلت لك الصورة ✓", "The photo reached you ✓"), systemImage: "paperplane.fill")
                     .font(Theme.font(9, .bold)).foregroundStyle(TelegramService.blue)
             }
             Spacer()

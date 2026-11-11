@@ -158,7 +158,10 @@ final class IntruderCam: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate 
         // The phone is held upright, so the photo must be too. When the connection couldn't rotate
         // the frames itself they arrive sideways (wider than tall); turn those here.
         let raw = CIImage(cvPixelBuffer: pb)
-        var ci = raw.oriented(raw.extent.width > raw.extent.height ? .leftMirrored : .upMirrored)
+        // (These came out upside down on the phone, so both cases are turned the other way round.)
+        var ci = raw.oriented(raw.extent.width > raw.extent.height ? .rightMirrored : .downMirrored)
+        // Double-check with the face itself: if Vision sees it upside down, turn it 180°.
+        if Self.faceIsUpsideDown(ci) { ci = ci.oriented(.down) }
         let longSide = max(ci.extent.width, ci.extent.height)
         if longSide > 1600 {
             let k = 1600 / longSide
@@ -167,6 +170,15 @@ final class IntruderCam: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate 
         let ctx = CIContext()
         guard let cg = ctx.createCGImage(ci, from: ci.extent) else { return }
         finish(UIImage(cgImage: cg).jpegData(compressionQuality: 0.8))
+    }
+
+    private static func faceIsUpsideDown(_ image: CIImage) -> Bool {
+        let req = VNDetectFaceRectanglesRequest()
+        if #available(iOS 15.0, *) { req.revision = VNDetectFaceRectanglesRequestRevision3 }
+        try? VNImageRequestHandler(ciImage: image, options: [:]).perform([req])
+        guard let face = req.results?.max(by: { $0.boundingBox.width < $1.boundingBox.width }),
+              let roll = face.roll?.doubleValue else { return false }
+        return abs(roll) > 2.3   // ~130°+: the face is the wrong way up
     }
 
     private func finish(_ data: Data?) {
