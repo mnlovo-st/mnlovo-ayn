@@ -179,7 +179,8 @@ struct ReminderLiveActivity: Widget {
                         Text(a.title)
                             .font(wf(16, .bold)).foregroundStyle(.white)
                             .lineLimit(1)
-                        Text(a.kindTitle.isEmpty ? (ar ? "آخر ساعة" : "Last hour") : (ar ? "\(a.kindTitle) · آخر ساعة" : "\(a.kindTitle) · last hour"))
+                        Text(a.kindTitle.isEmpty ? (a.badge.isEmpty ? (ar ? "آخر ساعة" : "Last hour") : a.badge)
+                             : "\(a.kindTitle) · \(a.badge.isEmpty ? (ar ? "آخر ساعة" : "last hour") : a.badge)")
                             .font(wf(11, .semibold)).foregroundStyle(teal.opacity(0.85))
                             .lineLimit(1)
                     }
@@ -266,7 +267,7 @@ private struct LockScreenActivity: View {
                 Image(systemName: "eye.fill").font(.system(size: 11, weight: .bold)).foregroundStyle(teal)
                 Text("MNLOVO SAVER").font(wf(11, .heavy)).foregroundStyle(.white.opacity(0.55)).tracking(1)
                 Spacer()
-                Text(ar ? "آخر ساعة" : "LAST HOUR")
+                Text(attrs.badge.isEmpty ? (ar ? "آخر ساعة" : "LAST HOUR") : attrs.badge)
                     .font(wf(10, .heavy)).foregroundStyle(night)
                     .padding(.horizontal, 8).padding(.vertical, 3)
                     .background(Capsule().fill(LinearGradient(colors: [teal, indigo], startPoint: .leading, endPoint: .trailing)))

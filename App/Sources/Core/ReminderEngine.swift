@@ -83,6 +83,7 @@ enum ReminderEngine {
         if r.isRoutine { return routinePlan(for: r, now: now) }
         if let sub = r.subscription, r.kind == .subscription { return subscriptionPlan(for: r, sub: sub, now: now) }
         guard !r.done else { return [] }
+        if r.kind == .appointment { return appointmentPlan(for: r, now: now) }
         let name = r.displayTitle
         var out: [Planned] = []
         let cal = Calendar.current
@@ -125,6 +126,25 @@ enum ReminderEngine {
             // Drop anything between now and the snooze time
             out = out.filter { $0.date >= s || $0.date == s }
         }
+        return out.filter { $0.date > now.addingTimeInterval(5) }.sorted { $0.date < $1.date }
+    }
+
+    /// An appointment isn't something you finish, so no countdown, no nagging and no "did you do it?".
+    /// Just the day before, and that morning.
+    private static func appointmentPlan(for r: Reminder, now: Date) -> [Planned] {
+        let name = r.displayTitle
+        let f = DateFormatter()
+        f.locale = AppLanguage.current.locale
+        f.timeStyle = .short
+        let at = f.string(from: r.due)
+        var out = [Planned(date: r.due.addingTimeInterval(-86400), title: name,
+                           body: tr("📅 عندك موعد بكرة الساعة \(at).", "📅 You have an appointment tomorrow at \(at)."))]
+        // That morning at 8, or two hours before if it's an early one.
+        let cal = Calendar.current
+        var morning = cal.date(bySettingHour: 8, minute: 0, second: 0, of: r.due) ?? r.due
+        if morning > r.due.addingTimeInterval(-2 * 3600) { morning = r.due.addingTimeInterval(-2 * 3600) }
+        out.append(Planned(date: morning, title: name,
+                           body: tr("📅 عندك موعد اليوم الساعة \(at).", "📅 You have an appointment today at \(at).")))
         return out.filter { $0.date > now.addingTimeInterval(5) }.sorted { $0.date < $1.date }
     }
 
@@ -316,43 +336,45 @@ enum WidgetBridge {
     static var vault: VaultSnapshot?
 }
 
-/// The last-hour countdown in the Dynamic Island and on the Lock Screen.
+/// The countdown in the Dynamic Island and on the Lock Screen.
 ///
-/// It appears one hour before a task is due, and only for reminders that have "show in Dynamic
-/// Island" switched on (the default). On iOS 26 and later the system starts it at that moment
-/// by itself, even with the app closed. Older versions don't allow an app to start one from the
-/// background, so there it starts the next time the app is open inside that hour, and a one-minute
-/// timer keeps checking while the app stays open.
+/// How early it appears is decided per reminder by `SmartIsland` (a call gets 15 minutes, a report
+/// gets 3 hours, an appointment gets none). On iOS 26 and later the system starts it at that
+/// moment by itself, even with the app closed. Older versions don't let an app start one from the
+/// background, so there it starts the next time the app is open inside that window, and a
+/// one-minute timer keeps checking while the app stays open.
 enum LiveActivityManager {
     static var enabled: Bool { UserDefaults.standard.object(forKey: "fx.liveActivity") as? Bool ?? true }
-    static let lead: TimeInterval = 3600
     private static var timer: Timer?
 
-    static func eligible(now: Date = Date()) -> [Reminder] {
+    /// Reminders that get a countdown, each with the moment it should start.
+    static func eligible(now: Date = Date()) -> [(Reminder, Date)] {
         RemindersStore.load(.real)
-            .filter { !$0.done && !$0.isRoutine && !$0.isSubscription && $0.showInIsland && $0.due > now }
-            .sorted { $0.due < $1.due }
+            .filter { !$0.done && $0.showInIsland && $0.due > now }
+            .compactMap { r in SmartIsland.start(for: r).map { (r, $0) } }
+            .sorted { $0.0.due < $1.0.due }
     }
 
-    private static func attributes(_ t: Reminder) -> ReminderActivityAttributes {
+    private static func attributes(_ t: Reminder, start: Date) -> ReminderActivityAttributes {
         ReminderActivityAttributes(reminderID: t.id.uuidString,
                                    title: t.sensitivity == .secret ? tr("🔒 مهمة سرية", "🔒 Secret task") : t.title,
                                    icon: t.kind.icon,
                                    isArabic: AppLanguage.current == .ar,
-                                   start: t.due.addingTimeInterval(-lead),
-                                   kindTitle: t.kind.title)
+                                   start: start,
+                                   kindTitle: t.kind.title,
+                                   badge: SmartIsland.decide(t).badge)
     }
 
     static func sync() {
         let now = Date()
         let all = enabled ? eligible(now: now) : []
-        // Running now: due inside the hour. Scheduled ahead (iOS 26+): the next few after that.
-        let live = all.filter { $0.due.timeIntervalSince(now) <= lead }.prefix(1)
-        var wanted = Set(live.map { $0.id.uuidString })
-        var ahead: [Reminder] = []
+        // Running now: its window has opened. Scheduled ahead (iOS 26+): the next few after that.
+        let live = all.filter { $0.1 <= now }.prefix(1)
+        var wanted = Set(live.map { $0.0.id.uuidString })
+        var ahead: [(Reminder, Date)] = []
         if #available(iOS 26.0, *) {
-            ahead = Array(all.filter { $0.due.timeIntervalSince(now) > lead && $0.due.timeIntervalSince(now) < 7 * 86400 }.prefix(3))
-            wanted.formUnion(ahead.map { $0.id.uuidString })
+            ahead = Array(all.filter { $0.1 > now && $0.1.timeIntervalSince(now) < 7 * 86400 }.prefix(3))
+            wanted.formUnion(ahead.map { $0.0.id.uuidString })
         }
 
         for act in Activity<ReminderActivityAttributes>.activities where !wanted.contains(act.attributes.reminderID) {
@@ -361,22 +383,22 @@ enum LiveActivityManager {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
         let existing = Set(Activity<ReminderActivityAttributes>.activities.map { $0.attributes.reminderID })
 
-        for t in live where !existing.contains(t.id.uuidString) {
+        for (t, start) in live where !existing.contains(t.id.uuidString) {
             let content = ActivityContent(state: ReminderActivityAttributes.ContentState(due: t.due),
-                                          staleDate: t.due.addingTimeInterval(lead))
-            _ = try? Activity.request(attributes: attributes(t), content: content, pushType: nil)
+                                          staleDate: t.due.addingTimeInterval(3600))
+            _ = try? Activity.request(attributes: attributes(t, start: start), content: content, pushType: nil)
         }
         #if compiler(>=6.2)
         if #available(iOS 26.0, *) {
-            for t in ahead where !existing.contains(t.id.uuidString) {
+            for (t, start) in ahead where !existing.contains(t.id.uuidString) {
                 let content = ActivityContent(state: ReminderActivityAttributes.ContentState(due: t.due),
-                                              staleDate: t.due.addingTimeInterval(lead))
-                let alert = AlertConfiguration(title: LocalizedStringResource(stringLiteral: tr("باقي ساعة", "One hour left")),
+                                              staleDate: t.due.addingTimeInterval(3600))
+                let decision = SmartIsland.decide(t)
+                let alert = AlertConfiguration(title: LocalizedStringResource(stringLiteral: decision.badge),
                                                body: LocalizedStringResource(stringLiteral: t.sensitivity == .secret ? tr("مهمة سرية", "A secret task") : t.title),
                                                sound: .default)
-                _ = try? Activity.request(attributes: attributes(t), content: content, pushType: nil,
-                                          style: .standard, alertConfiguration: alert,
-                                          start: t.due.addingTimeInterval(-lead))
+                _ = try? Activity.request(attributes: attributes(t, start: start), content: content, pushType: nil,
+                                          style: .standard, alertConfiguration: alert, start: start)
             }
         }
         #endif

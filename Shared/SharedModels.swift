@@ -161,5 +161,7 @@ struct ReminderActivityAttributes: ActivityAttributes {
     /// Start of the countdown window (for the progress bar).
     var start: Date = Date()
     var kindTitle: String = ""
+    /// "Last 3 hours", "Last 30 min"… — how long the countdown runs, chosen per reminder.
+    var badge: String = ""
 }
 #endif

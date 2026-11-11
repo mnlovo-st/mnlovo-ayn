@@ -326,27 +326,19 @@ struct ReminderEditor: View {
                                                                    set: { reminder.subscription = $0 }))
                                 .transition(.opacity.combined(with: .move(edge: .bottom)))
                         } else {
-                            VStack(alignment: .leading, spacing: 10) {
-                                SectionTitle(text: tr("في آخر يوم ذكّرني كل", "On the last day, remind me every"), icon: "repeat")
-                                Picker("", selection: $reminder.nagHours) {
-                                    ForEach([1, 2, 3, 4], id: \.self) { h in Text(tr("\(h) ساعة", "\(h)h")).tag(h) }
-                                }
-                                .pickerStyle(.segmented)
-                            }
-                            .glass(14)
-
-                            if reminder.kind != .routine {
-                                Toggle(isOn: $reminder.showInIsland) {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Label(tr("عدّاد في Dynamic Island", "Countdown in the Dynamic Island"),
-                                              systemImage: "platter.filled.top.iphone")
-                                            .font(Theme.font(15, .semibold))
-                                        Text(tr("يطلع قبل الموعد بساعة ويعدّ لين يخلص الوقت", "Appears an hour before and counts down to the time"))
-                                            .font(Theme.font(12)).foregroundStyle(Theme.sub)
+                            if reminder.kind != .appointment {
+                                VStack(alignment: .leading, spacing: 10) {
+                                    SectionTitle(text: tr("في آخر يوم ذكّرني كل", "On the last day, remind me every"), icon: "repeat")
+                                    Picker("", selection: $reminder.nagHours) {
+                                        ForEach([1, 2, 3, 4], id: \.self) { h in Text(tr("\(h) ساعة", "\(h)h")).tag(h) }
                                     }
+                                    .pickerStyle(.segmented)
                                 }
-                                .tint(Theme.accent).glass(14)
+                                .glass(14)
                             }
+
+                            islandSection
+                                .animation(.easeInOut(duration: 0.25), value: SmartIsland.decide(reminder).badge)
 
                             schedulePreview
                         }
@@ -381,6 +373,35 @@ struct ReminderEditor: View {
                 .padding(20)
             }
             .scrollDismissesKeyboard(.interactively)
+        }
+    }
+
+    /// The countdown switch, with the smart decision spelled out underneath so it never feels arbitrary.
+    @ViewBuilder private var islandSection: some View {
+        let d = SmartIsland.decide(reminder)
+        if reminder.kind == .appointment {
+            Label(d.reason, systemImage: "calendar.badge.clock")
+                .font(Theme.font(13, .medium)).foregroundStyle(Theme.sub)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .glass(14)
+        } else if d.lead != nil {
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle(isOn: $reminder.showInIsland) {
+                    Label(tr("عدّاد في Dynamic Island", "Countdown in the Dynamic Island"),
+                          systemImage: "platter.filled.top.iphone")
+                        .font(Theme.font(15, .semibold))
+                }
+                .tint(Theme.accent)
+                if reminder.showInIsland {
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: "sparkles").font(.system(size: 11, weight: .bold)).foregroundStyle(Theme.accent)
+                        Text(d.reason).font(Theme.font(12)).foregroundStyle(Theme.sub)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .transition(.opacity)
+                }
+            }
+            .glass(14)
         }
     }
 
