@@ -298,8 +298,15 @@ struct ReminderLiveActivity: Widget {
             } compactLeading: {
                 ActivityIcon(icon: "eye.fill", size: 22)
             } compactTrailing: {
-                Countdown(due: due, size: 13)
-                    .frame(width: 54, alignment: .trailing)
+                // A timer Text claims the widest time it could ever show, which stretched the
+                // island to both edges. An invisible "00:00" decides the width instead, and the
+                // live timer is drawn over it.
+                Text(due.timeIntervalSinceNow >= 3600 ? "0:00:00" : "00:00")
+                    .font(wf(13, .heavy))
+                    .monospacedDigit()
+                    .hidden()
+                    .overlay(alignment: .trailing) { Countdown(due: due, size: 13) }
+                    .fixedSize()
             } minimal: {
                 ProgressView(timerInterval: a.start...max(a.start.addingTimeInterval(1), due), countsDown: true) {
                     EmptyView()
