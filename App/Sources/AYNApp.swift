@@ -107,6 +107,7 @@ struct RootView: View {
             if newValue == .active {
                 ScreenShield.shared.install()
                 LiveActivityManager.sync()
+                WidgetBridge.update()
                 Task { await perms.refresh() }   // back from Settings after allowing something
             }
         }

@@ -33,6 +33,47 @@ struct SaverWidgetBundle: WidgetBundle {
     }
 }
 
+// MARK: - Nothing from the app yet
+
+/// Shown instead of "all clear" when no data from the app has reached the widget at all, so an empty
+/// list never pretends to be an empty day.
+private struct Linked<Content: View>: View {
+    let p: WidgetShared.Payload
+    @ViewBuilder var content: Content
+    @Environment(\.widgetFamily) private var family
+
+    var body: some View {
+        if p.live {
+            content
+        } else {
+            switch family {
+            case .accessoryCircular:
+                Image(systemName: "eye.trianglebadge.exclamationmark").font(.system(size: 20, weight: .bold))
+            case .accessoryInline:
+                Text(p.isArabic ? "افتح SAVER مرة" : "Open SAVER once")
+            case .accessoryRectangular:
+                VStack(alignment: .leading, spacing: 2) {
+                    Label("SAVER", systemImage: "eye.fill").font(wf(12, .bold))
+                    Text(p.isArabic ? "افتح التطبيق مرة عشان يوصل الودجت" : "Open the app once to link this widget")
+                        .font(wf(11, .medium))
+                }
+            default:
+                VStack(spacing: 8) {
+                    Image(systemName: "eye.trianglebadge.exclamationmark")
+                        .font(.system(size: 26, weight: .bold))
+                        .foregroundStyle(LinearGradient(colors: [teal, indigo], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    Text(p.isArabic ? "الودجت بعده ما وصل" : "Not linked yet")
+                        .font(wf(14, .bold)).foregroundStyle(.white)
+                    Text(p.isArabic ? "افتح MNLOVO SAVER مرة وحدة" : "Open MNLOVO SAVER once")
+                        .font(wf(11, .medium)).foregroundStyle(.white.opacity(0.65))
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+    }
+}
+
 // MARK: - Home / Lock Screen widget
 
 struct TasksEntry: TimelineEntry {
@@ -57,6 +98,7 @@ struct TasksProvider: TimelineProvider {
         var moments = p.routines.map(\.at) + p.items.map(\.due)
         moments.append(Calendar.current.startOfDay(for: now).addingTimeInterval(86400))   // midnight
         let upcoming = Array(Set(moments.filter { $0 > now && $0 < now.addingTimeInterval(12 * 3600) })).sorted().prefix(12)
+        WidgetShared.beat(p)   // lets the app see that the widget ran and what reached it
         let entries = [TasksEntry(date: now, payload: p)] + upcoming.map { TasksEntry(date: $0, payload: p) }
         completion(Timeline(entries: entries, policy: .after(now.addingTimeInterval(30 * 60))))
     }
@@ -65,7 +107,7 @@ struct TasksProvider: TimelineProvider {
 struct NextTasksWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: WidgetShared.kind, provider: TasksProvider()) { entry in
-            TasksWidgetView(entry: entry)
+            Linked(p: entry.payload) { TasksWidgetView(entry: entry) }
                 .containerBackground(for: .widget) {
                     LinearGradient(colors: [night, Color(red: 0.06, green: 0.06, blue: 0.12)], startPoint: .top, endPoint: .bottom)
                 }
@@ -306,7 +348,7 @@ private struct LockScreenActivity: View {
 struct StreakWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: WidgetShared.streakKind, provider: TasksProvider()) { entry in
-            StreakView(p: entry.payload)
+            Linked(p: entry.payload) { StreakView(p: entry.payload) }
                 .containerBackground(for: .widget) {
                     LinearGradient(colors: [Color(red: 0.16, green: 0.07, blue: 0.03), night], startPoint: .topLeading, endPoint: .bottomTrailing)
                 }
@@ -369,7 +411,7 @@ struct StreakView: View {
 struct SubscriptionWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: WidgetShared.subsKind, provider: TasksProvider()) { entry in
-            SubscriptionView(p: entry.payload)
+            Linked(p: entry.payload) { SubscriptionView(p: entry.payload) }
                 .containerBackground(for: .widget) {
                     LinearGradient(colors: [Color(red: 0.07, green: 0.05, blue: 0.16), night], startPoint: .topLeading, endPoint: .bottomTrailing)
                 }
@@ -490,7 +532,7 @@ private func header(_ title: String, _ icon: String, _ tint: Color, trailing: St
 struct RoutinesWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: WidgetShared.routinesKind, provider: TasksProvider()) { entry in
-            RoutinesView(entry: entry)
+            Linked(p: entry.payload) { RoutinesView(entry: entry) }
                 .containerBackground(for: .widget) { bg(Color(red: 0.03, green: 0.12, blue: 0.11)) }
         }
         .configurationDisplayName("MNLOVO · Routines")
@@ -576,7 +618,7 @@ struct RoutinesView: View {
 struct CountdownWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: WidgetShared.countdownKind, provider: TasksProvider()) { entry in
-            CountdownView(entry: entry)
+            Linked(p: entry.payload) { CountdownView(entry: entry) }
                 .containerBackground(for: .widget) { bg(Color(red: 0.12, green: 0.05, blue: 0.03)) }
         }
         .configurationDisplayName("MNLOVO · Countdown")
@@ -638,7 +680,7 @@ struct CountdownView: View {
 struct SecurityWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: WidgetShared.securityKind, provider: TasksProvider()) { entry in
-            SecurityView(p: entry.payload, now: entry.date)
+            Linked(p: entry.payload) { SecurityView(p: entry.payload, now: entry.date) }
                 .containerBackground(for: .widget) { bg(Color(red: 0.04, green: 0.06, blue: 0.14)) }
         }
         .configurationDisplayName("MNLOVO · Safety")

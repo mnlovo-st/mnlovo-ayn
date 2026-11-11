@@ -1,4 +1,6 @@
 import SwiftUI
+import UIKit
+import Security
 import WidgetKit
 
 // MARK: - The widgets, and how to put one on the Home Screen
@@ -70,6 +72,8 @@ struct WidgetGuideSheet: View {
             }
             .buttonStyle(PressScale())
 
+            WidgetLinkStatus()
+
             Text(tr("الأنواع اللي عندك", "What's available"))
                 .font(Theme.font(13, .bold)).foregroundStyle(Theme.sub)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -101,7 +105,7 @@ struct WidgetGuideSheet: View {
         }
         .onAppear {
             // Make sure the widgets have fresh data the moment the person goes to add one.
-            WidgetCenter.shared.reloadAllTimelines()
+            WidgetBridge.update()
             if !seen {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { showHowTo = true }
             }
@@ -109,6 +113,136 @@ struct WidgetGuideSheet: View {
         .fullScreenCover(isPresented: $showHowTo) {
             WidgetHowTo { seen = true; showHowTo = false }
         }
+    }
+}
+
+/// Is the data actually reaching the widget? The app writes it two ways (App Group and a shared
+/// keychain item) and the widget writes back a heartbeat each time it runs, so this card can say
+/// which way works on this phone — and "نسخ التقرير" hands over the details when neither does.
+struct WidgetLinkStatus: View {
+    @State private var beat: WidgetShared.Heartbeat?
+    @State private var copied = false
+    @State private var tick = 0
+
+    private var groupOK: Bool { WidgetShared.groupGranted }
+    private var keychainOK: Bool { WidgetShared.lastKeychainStatus == errSecSuccess }
+
+    private enum LinkState { case working, silent, waiting, blocked }
+    private var state: LinkState {
+        if let b = beat, Date().timeIntervalSince(b.at) < 6 * 3600 { return b.source == "none" ? .silent : .working }
+        return (groupOK || keychainOK) ? .waiting : .blocked
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Image(systemName: icon).font(.system(size: 20, weight: .bold)).foregroundStyle(tint)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(Theme.font(15, .heavy)).foregroundStyle(Theme.text)
+                    Text(detail).font(Theme.font(12)).foregroundStyle(Theme.sub)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+            HStack(spacing: 8) {
+                chip("App Group", groupOK)
+                chip("Keychain", keychainOK)
+                chip(tr("الودجت", "Widget"), beat.map { $0.source != "none" } ?? false)
+            }
+            HStack(spacing: 10) {
+                Button {
+                    Haptics.tap()
+                    WidgetBridge.update()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) { refresh() }
+                } label: {
+                    Label(tr("حدّث الحين", "Refresh now"), systemImage: "arrow.clockwise")
+                        .font(Theme.font(12, .bold)).foregroundStyle(Theme.accent)
+                }
+                Spacer()
+                Button {
+                    UIPasteboard.general.string = report
+                    Haptics.tap()
+                    copied = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { copied = false }
+                } label: {
+                    Label(copied ? tr("انّسخ ✓", "Copied ✓") : tr("نسخ التقرير", "Copy report"),
+                          systemImage: copied ? "checkmark" : "doc.on.doc")
+                        .font(Theme.font(12, .bold)).foregroundStyle(Theme.sub)
+                }
+            }
+            .buttonStyle(PressScale())
+        }
+        .padding(14)
+        .glass(0, radius: 18, tint: tint)
+        .onAppear { refresh() }
+    }
+
+    private func refresh() {
+        beat = WidgetShared.lastBeat()
+        tick += 1
+    }
+
+    private func chip(_ label: String, _ ok: Bool) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: ok ? "checkmark.circle.fill" : "xmark.circle.fill")
+            Text(label)
+        }
+        .font(Theme.font(11, .bold))
+        .foregroundStyle(ok ? Theme.ok : Theme.faint)
+        .padding(.horizontal, 8).padding(.vertical, 5)
+        .background(Capsule().fill((ok ? Theme.ok : Theme.faint).opacity(0.12)))
+    }
+
+    private var icon: String {
+        switch state {
+        case .working: return "checkmark.seal.fill"
+        case .silent: return "exclamationmark.triangle.fill"
+        case .waiting: return "hourglass"
+        case .blocked: return "link.badge.plus"
+        }
+    }
+    private var tint: Color {
+        switch state {
+        case .working: return Theme.ok
+        case .silent, .blocked: return Color.orange
+        case .waiting: return Theme.accent
+        }
+    }
+    private var title: String {
+        switch state {
+        case .working: return tr("الودجت مربوط ويستلم بياناتك", "Widgets are linked")
+        case .silent: return tr("الودجت شغّال بس ما يوصله شي", "The widget runs but gets nothing")
+        case .waiting: return tr("بانتظار الودجت", "Waiting for the widget")
+        case .blocked: return tr("التوقيع ما سمح بالربط", "The signature blocks the link")
+        }
+    }
+    private var detail: String {
+        switch state {
+        case .working:
+            let t = beat.map { $0.at.formatted(date: .omitted, time: .shortened) } ?? ""
+            return tr("آخر مرة تحدّث \(t)", "Last updated \(t)")
+        case .silent:
+            return tr("اضغط «نسخ التقرير» وطرشه لنا عشان نشوف شو اللي ناقص.", "Tap “Copy report” and send it to us.")
+        case .waiting:
+            return tr("حط أي ودجت عالشاشة الرئيسية، وارجع هني بعد دقيقة.", "Add any widget to the Home Screen, then come back in a minute.")
+        case .blocked:
+            return tr("التطبيق تثبّت بتوقيع ما يسمح يشارك البيانات مع الودجت. اضغط «نسخ التقرير» وطرشه لنا.",
+                      "This install was signed without data sharing. Tap “Copy report” and send it to us.")
+        }
+    }
+
+    private var report: String {
+        let b = beat
+        return """
+        MNLOVO SAVER widget report
+        app: \(Bundle.main.bundleIdentifier ?? "-")  v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "-")
+        profile: \(Provision.hasProfile ? "yes" : "no")  team: \(Provision.teamID ?? "-")
+        group: \(WidgetShared.appGroup)  granted: \(groupOK)
+        profile groups: \(Provision.appGroups.joined(separator: ", "))
+        keychain group: \(SharedKeychain.group ?? "-")  status: \(WidgetShared.lastKeychainStatus)
+        profile keychain: \(Provision.keychainGroups.joined(separator: ", "))
+        widget beat: \(b.map { "\($0.at.formatted()) via \($0.source) items \($0.items) routines \($0.routines) granted \($0.groupGranted) team \($0.team)" } ?? "none")
+        """
     }
 }
 
