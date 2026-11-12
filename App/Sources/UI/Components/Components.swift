@@ -59,39 +59,50 @@ struct AuroraBackground: View {
     private var live: Bool { stack.top == id && phase == .active }
 
     var body: some View {
-        ZStack {
-            Theme.bg
-            if #available(iOS 18.0, *) {
-                // The mesh drifts so slowly (one full sweep takes about 50 seconds) that redrawing
-                // it 10 times a second moves it under a point per step — the eye can't tell.
-                TimelineView(.animation(minimumInterval: 1.0 / 10.0, paused: !live)) { ctx in
-                    let t = Float(ctx.date.timeIntervalSinceReferenceDate * 0.12)
-                    let cx: Float = 0.5 + 0.12 * sin(t)
-                    let cy: Float = 0.45 + 0.1 * cos(t * 1.3)
-                    let pts: [SIMD2<Float>] = [
-                        SIMD2(0, 0), SIMD2(0.5, 0), SIMD2(1, 0),
-                        SIMD2(0, 0.5), SIMD2(cx, cy), SIMD2(1, 0.5),
-                        SIMD2(0, 1), SIMD2(0.5, 1), SIMD2(1, 1)
-                    ]
-                    MeshGradient(width: 3, height: 3, points: pts, colors: [
-                        Color(hex: 0x0B2A2B), Theme.bg, Color(hex: 0x120E2C),
-                        Theme.bg, Color(hex: 0x0A0C18), Theme.bg,
-                        Color(hex: 0x0E0B26), Theme.bg, Color(hex: 0x1E0F33)
-                    ])
-                    .opacity(0.95)
-                }
+        // The base colour sets the size (the screen). Everything else sits in overlays, so the
+        // big glow pictures can spill past the edges without making the screen itself wider —
+        // which is what pushed the welcome card off to the side in build 41.
+        Theme.bg
+            .overlay { mesh }
+            .overlay {
+                glow(AuroraGlow.a, size: 360, blur: 120, fallback: Theme.accent.opacity(0.16))
+                    .offset(x: move ? -120 : -60, y: move ? -320 : -250)
             }
-            glow(AuroraGlow.a, size: 360, blur: 120, fallback: Theme.accent.opacity(0.16))
-                .offset(x: move ? -120 : -60, y: move ? -320 : -250)
-            glow(AuroraGlow.b, size: 420, blur: 130, fallback: Theme.accent2.opacity(0.2))
-                .offset(x: move ? 140 : 90, y: move ? 330 : 260)
+            .overlay {
+                glow(AuroraGlow.b, size: 420, blur: 130, fallback: Theme.accent2.opacity(0.2))
+                    .offset(x: move ? 140 : 90, y: move ? 330 : 260)
+            }
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+            .onAppear {
+                stack.push(id)
+                withAnimation(.easeInOut(duration: 10).repeatForever(autoreverses: true)) { move = true }
+            }
+            .onDisappear { stack.pop(id) }
+    }
+
+    @ViewBuilder
+    private var mesh: some View {
+        if #available(iOS 18.0, *) {
+            // The mesh drifts so slowly (one full sweep takes about 50 seconds) that redrawing
+            // it 10 times a second moves it under a point per step — the eye can't tell.
+            TimelineView(.animation(minimumInterval: 1.0 / 10.0, paused: !live)) { ctx in
+                let t = Float(ctx.date.timeIntervalSinceReferenceDate * 0.12)
+                let cx: Float = 0.5 + 0.12 * sin(t)
+                let cy: Float = 0.45 + 0.1 * cos(t * 1.3)
+                let pts: [SIMD2<Float>] = [
+                    SIMD2(0, 0), SIMD2(0.5, 0), SIMD2(1, 0),
+                    SIMD2(0, 0.5), SIMD2(cx, cy), SIMD2(1, 0.5),
+                    SIMD2(0, 1), SIMD2(0.5, 1), SIMD2(1, 1)
+                ]
+                MeshGradient(width: 3, height: 3, points: pts, colors: [
+                    Color(hex: 0x0B2A2B), Theme.bg, Color(hex: 0x120E2C),
+                    Theme.bg, Color(hex: 0x0A0C18), Theme.bg,
+                    Color(hex: 0x0E0B26), Theme.bg, Color(hex: 0x1E0F33)
+                ])
+                .opacity(0.95)
+            }
         }
-        .ignoresSafeArea()
-        .onAppear {
-            stack.push(id)
-            withAnimation(.easeInOut(duration: 10).repeatForever(autoreverses: true)) { move = true }
-        }
-        .onDisappear { stack.pop(id) }
     }
 
     @ViewBuilder
