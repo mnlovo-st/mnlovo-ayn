@@ -94,6 +94,11 @@ struct RootView: View {
 
             ToastHost().zIndex(70)
 
+            if let f = state.farewell {
+                FarewellOverlay(farewell: f) { withAnimation { state.farewell = nil } }
+                    .zIndex(90)
+            }
+
             if let c = state.celebration {
                 CelebrationOverlay(celebration: c) { withAnimation { state.celebration = nil } }
                     .id(c.id)

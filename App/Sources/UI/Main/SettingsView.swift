@@ -20,7 +20,7 @@ struct SettingsView: View {
     @State private var secretTaps = 0
 
     enum SettingsSheet: String, Identifiable {
-        case password, section, twoFA, recovery, duress, intruders, cloudSetup, backup, telegram, delete, desk, cipher, legacy, widgets, username
+        case password, section, twoFA, recovery, duress, intruders, cloudSetup, backup, telegram, delete, desk, cipher, legacy, widgets, username, signOut
         var id: String { rawValue }
     }
 
@@ -186,6 +186,10 @@ struct SettingsView: View {
                 }
 
                 group(tr("منطقة الخطر", "Danger zone"), "exclamationmark.triangle.fill") {
+                    if !state.isDecoy {
+                        row("rectangle.portrait.and.arrow.right", tr("تسجيل الخروج", "Sign out"), tint: Theme.warn) { sheet = .signOut }
+                        divider
+                    }
                     row("person.crop.circle.badge.xmark", tr("حذف الحساب نهائياً", "Delete account permanently"), tint: Theme.danger) { sheet = .delete }
                 }
 
@@ -228,6 +232,7 @@ struct SettingsView: View {
                 case .legacy: LegacyView()
                 case .widgets: WidgetGuideSheet()
                 case .username: UsernameSheet()
+                case .signOut: SignOutSheet()
                 }
             }
             .environmentObject(state)

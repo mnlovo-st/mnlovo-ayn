@@ -104,6 +104,9 @@ final class AppState: ObservableObject {
     @Published var newIntrusions = 0
     @Published var syncing = false
     @Published var celebration: Celebration?
+    /// The goodbye animation playing over everything (sign out / account deleted).
+    @Published var farewell: Farewell?
+    enum Farewell: Equatable { case signOut(String), delete(String) }
     @Published var syncError: String?
 
     private var masterKey: SymmetricKey?
@@ -1171,6 +1174,28 @@ final class AppState: ObservableObject {
             if !silent { show(error.localizedDescription, icon: "icloud.slash", style: .error) }
             return false
         }
+    }
+
+    // MARK: - Sign out
+
+    enum SignOutResult: Equatable { case done, wrongPassword, noBackup }
+
+    /// Step one of signing out: the password, then a fresh cloud backup. No backup, no sign-out —
+    /// nothing may be lost.
+    func prepareSignOut(password: String) async -> SignOutResult {
+        guard space == .real else { return .wrongPassword }
+        guard await verifyMainPassword(password) else { return .wrongPassword }
+        guard cloudReady, await backupNow(silent: true) else { return .noBackup }
+        return .done
+    }
+
+    /// Step two, once the sheet is gone: the goodbye covers the screen, then this phone is cleaned.
+    /// The 2FA entry and the Telegram links stay, so signing back in brings everything home.
+    func finishSignOut() async {
+        let name = profile?.username ?? ""
+        withAnimation(.easeInOut(duration: 0.5)) { farewell = .signOut(name) }
+        try? await Task.sleep(nanoseconds: 700_000_000)
+        eraseEverything()
     }
 
     // MARK: - Erase

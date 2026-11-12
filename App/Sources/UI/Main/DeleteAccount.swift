@@ -259,7 +259,9 @@ struct DeleteAccountSheet: View {
     private func finish() async {
         Haptics.error()
         SoundFX.shared.play(.delete, volume: 0.7)
-        await state.deleteAccount(includeCloud: includeCloud)
+        let name = state.profile?.username ?? ""
+        withAnimation(.easeInOut(duration: 0.5)) { state.farewell = .delete(name) }
         dismiss()
+        await state.deleteAccount(includeCloud: includeCloud)
     }
 }
