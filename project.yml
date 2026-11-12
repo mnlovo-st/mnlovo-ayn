@@ -59,6 +59,7 @@ targets:
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         UIRequiredDeviceCapabilities: [arm64]
         NSSupportsLiveActivities: true
+        CADisableMinimumFrameDurationOnPhone: true
         NSHumanReadableCopyright: "© MNLOVO 2026"
         ITSAppUsesNonExemptEncryption: false
         NSFaceIDUsageDescription: "MNLOVO SAVER uses Face ID to unlock your encrypted vault. | يستخدم MNLOVO SAVER بصمة الوجه لفتح خزنتك المشفّرة."

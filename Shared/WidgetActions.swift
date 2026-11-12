@@ -26,7 +26,10 @@ struct CompleteFromWidgetIntent: LiveActivityIntent {
     func perform() async throws -> some IntentResult {
         WidgetShared.tickLocally(id: reminderID, routine: isRoutine)
         #if !SAVER_WIDGET
-        await MainActor.run { WidgetQueue.drain() }
+        await MainActor.run {
+            WidgetQueue.drain()
+            WidgetBridge.updateNow()
+        }
         #endif
         WidgetCenter.shared.reloadAllTimelines()
         return .result()

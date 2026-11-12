@@ -4,13 +4,67 @@ import UniformTypeIdentifiers
 
 // MARK: - Background
 
+/// Keeps track of which aurora is on top. Screens and sheets each draw their own background, so
+/// with a sheet open two or three of them used to animate at once, stacked under each other. Only
+/// the newest one (the one you can see) animates now; the ones underneath hold still.
+@MainActor
+final class AuroraStack: ObservableObject {
+    static let shared = AuroraStack()
+    @Published private(set) var top: UUID?
+    private var stack: [UUID] = []
+
+    func push(_ id: UUID) {
+        stack.removeAll { $0 == id }
+        stack.append(id)
+        top = id
+    }
+
+    func pop(_ id: UUID) {
+        stack.removeAll { $0 == id }
+        top = stack.last
+    }
+}
+
+/// The two soft glows, blurred once and kept as pictures. Blurring a 400-point circle by 120 points
+/// is one of the heaviest things the GPU can be asked to do, and it used to happen on every frame.
+/// Moving a ready-made picture costs next to nothing and looks exactly the same.
+@MainActor
+private enum AuroraGlow {
+    static let a = make(color: Theme.accent.opacity(0.16), size: 360, blur: 120)
+    static let b = make(color: Theme.accent2.opacity(0.2), size: 420, blur: 130)
+
+    /// The canvas leaves room for the blur's spread, so nothing gets clipped.
+    static func canvas(_ size: CGFloat, _ blur: CGFloat) -> CGFloat { size + blur * 6 }
+
+    private static func make(color: Color, size: CGFloat, blur: CGFloat) -> Image? {
+        let side = canvas(size, blur)
+        let view = Circle().fill(color)
+            .frame(width: size, height: size)
+            .blur(radius: blur)
+            .frame(width: side, height: side)
+        let r = ImageRenderer(content: view)
+        r.scale = 1          // a blur has no detail to lose, so one pixel per point is plenty
+        r.isOpaque = false
+        return r.uiImage.map { Image(uiImage: $0).resizable() }
+    }
+}
+
 struct AuroraBackground: View {
     @State private var move = false
+    @State private var id = UUID()
+    @ObservedObject private var stack = AuroraStack.shared
+    @Environment(\.scenePhase) private var phase
+
+    /// Only the background you can see moves, and only while the app is on screen.
+    private var live: Bool { stack.top == id && phase == .active }
+
     var body: some View {
         ZStack {
             Theme.bg
             if #available(iOS 18.0, *) {
-                TimelineView(.animation(minimumInterval: 1.0 / 20.0)) { ctx in
+                // The mesh drifts so slowly (one full sweep takes about 50 seconds) that redrawing
+                // it 10 times a second moves it under a point per step — the eye can't tell.
+                TimelineView(.animation(minimumInterval: 1.0 / 10.0, paused: !live)) { ctx in
                     let t = Float(ctx.date.timeIntervalSinceReferenceDate * 0.12)
                     let cx: Float = 0.5 + 0.12 * sin(t)
                     let cy: Float = 0.45 + 0.1 * cos(t * 1.3)
@@ -27,18 +81,26 @@ struct AuroraBackground: View {
                     .opacity(0.95)
                 }
             }
-            Circle().fill(Theme.accent.opacity(0.16))
-                .frame(width: 360, height: 360)
-                .blur(radius: 120)
+            glow(AuroraGlow.a, size: 360, blur: 120, fallback: Theme.accent.opacity(0.16))
                 .offset(x: move ? -120 : -60, y: move ? -320 : -250)
-            Circle().fill(Theme.accent2.opacity(0.2))
-                .frame(width: 420, height: 420)
-                .blur(radius: 130)
+            glow(AuroraGlow.b, size: 420, blur: 130, fallback: Theme.accent2.opacity(0.2))
                 .offset(x: move ? 140 : 90, y: move ? 330 : 260)
         }
         .ignoresSafeArea()
         .onAppear {
+            stack.push(id)
             withAnimation(.easeInOut(duration: 10).repeatForever(autoreverses: true)) { move = true }
+        }
+        .onDisappear { stack.pop(id) }
+    }
+
+    @ViewBuilder
+    private func glow(_ image: Image?, size: CGFloat, blur: CGFloat, fallback: Color) -> some View {
+        if let image {
+            let side = AuroraGlow.canvas(size, blur)
+            image.frame(width: side, height: side).allowsHitTesting(false)
+        } else {
+            Circle().fill(fallback).frame(width: size, height: size).blur(radius: blur)
         }
     }
 }

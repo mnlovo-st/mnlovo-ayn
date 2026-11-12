@@ -308,7 +308,24 @@ enum WidgetQueue {
 }
 
 enum WidgetBridge {
+    private static var queued: DispatchWorkItem?
+
+    /// One edit often triggers several updates in a row (reschedule, state, notifications); they're
+    /// gathered into one, a moment later, instead of rewriting and reloading the widgets each time.
     static func update() {
+        let schedule = {
+            queued?.cancel()
+            let work = DispatchWorkItem { updateNow() }
+            queued = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: work)
+        }
+        if Thread.isMainThread { schedule() } else { DispatchQueue.main.async(execute: schedule) }
+    }
+
+    /// Right away — for when the app may be suspended straight after (a tap on the widget's ✓).
+    static func updateNow() {
+        queued?.cancel()
+        queued = nil
         WidgetQueue.drain()   // taps from the widget first, so they don't come back
         let now = Date()
         let list = RemindersStore.load(.real)
