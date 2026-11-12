@@ -150,6 +150,35 @@ function copyButton(text: string) {
     : { text: "📋 انسخ الشفرة", callback_data: "tg:copy" };
 }
 
+
+// ---- What goes where ----------------------------------------------------------------------
+// Each linked chat can take any of four kinds of message. A chat whose `routes` is still null
+// follows the defaults:
+//   items    (accounts, passwords, sensitive and 🔴 secret items) → the first group / channel /
+//            private chat the owner added; the bot chat only if there's nothing else
+//   intruder (the wrong-attempt photo) → the bot chat only
+//   alerts   (reminders) and attempts (every wrong try, as text) → off
+const KINDS = ["items", "alerts", "intruder", "attempts"];
+type RouteRow = { chat_id: number; type: string; role: string; enabled: boolean; routes: string[] | null; created_at?: string; title?: string };
+const isBotChat = (t: RouteRow) => t.type === "private" && t.role !== "friend";
+
+function defaultRoutes(t: RouteRow, all: RouteRow[]): string[] {
+  const home = all.find((x) => !isBotChat(x)) ?? all.find(isBotChat);
+  const r: string[] = [];
+  if (home && home.chat_id === t.chat_id) r.push("items");
+  if (isBotChat(t)) r.push("intruder");
+  return r;
+}
+function routesOf(t: RouteRow, all: RouteRow[]): string[] {
+  return Array.isArray(t.routes) ? t.routes.filter((k) => KINDS.includes(k)) : defaultRoutes(t, all);
+}
+async function routedTargets(userId: string, kind: string): Promise<RouteRow[]> {
+  const { data } = await admin.from("saver_tg_targets").select("chat_id, type, role, enabled, routes, created_at")
+    .eq("user_id", userId).order("created_at");
+  const all = (data ?? []) as RouteRow[];
+  return all.filter((t) => t.enabled && routesOf(t, all).includes(kind));
+}
+
 type Target = { user_id: string; chat_id: number; type: string; enabled: boolean; role: string; tg_user_id: number | null; title: string };
 
 async function targetsOf(chatId: number): Promise<Target[]> {
@@ -560,9 +589,22 @@ Deno.serve(async (req) => {
       return json({ bot: cfg.bot_username, code });
     }
     case "status": {
-      const { data } = await admin.from("saver_tg_targets").select("chat_id, title, type, enabled, role")
+      const { data } = await admin.from("saver_tg_targets").select("chat_id, title, type, enabled, role, routes, created_at")
         .eq("user_id", user.id).order("created_at");
-      return json({ bot: cfg.bot_username, targets: data ?? [] });
+      const all = (data ?? []) as RouteRow[];
+      const targets = all.map((t) => ({ chat_id: t.chat_id, title: t.title, type: t.type, enabled: t.enabled, role: t.role,
+                                         routes: routesOf(t, all), custom: Array.isArray(t.routes) }));
+      return json({ bot: cfg.bot_username, targets });
+    }
+    case "routes": {
+      // body.routes: { "<chat_id>": ["items", ...], ... } — the whole picture, saved per chat
+      const map = (body.routes && typeof body.routes === "object") ? body.routes as Record<string, unknown> : {};
+      for (const [id, list] of Object.entries(map)) {
+        const clean = Array.isArray(list) ? [...new Set(list.filter((k) => KINDS.includes(String(k))).map(String))] : [];
+        await admin.from("saver_tg_targets").update({ routes: clean }).eq("user_id", user.id).eq("chat_id", Number(id));
+      }
+      if (body.reset) await admin.from("saver_tg_targets").update({ routes: null }).eq("user_id", user.id);
+      return json({ ok: true });
     }
     case "toggle": {
       await admin.from("saver_tg_targets").update({ enabled: !!body.enabled })
@@ -632,8 +674,7 @@ Deno.serve(async (req) => {
       // An intruder snapshot (or a text-only security alert) to every enabled chat.
       const caption = String(body.caption ?? "").slice(0, 1000);
       const photo = typeof body.photo === "string" ? body.photo : null;
-      const { data: targets } = await admin.from("saver_tg_targets").select("chat_id")
-        .eq("user_id", user.id).eq("enabled", true);
+      const targets = await routedTargets(user.id, body.kind === "attempts" ? "attempts" : "intruder");
       let sent = 0;
       for (const t of targets ?? []) {
         const r = photo ? await tgPhoto(cfg, t.chat_id, photo, caption)
@@ -646,8 +687,7 @@ Deno.serve(async (req) => {
       const text = String(body.text ?? "").slice(0, 4000);
       if (!text) return json({ error: "empty" }, 400);
       const copy = typeof body.copy === "string" ? body.copy : "";
-      const { data: targets } = await admin.from("saver_tg_targets").select("chat_id")
-        .eq("user_id", user.id).eq("enabled", true);
+      const targets = await routedTargets(user.id, KINDS.includes(body.kind) ? body.kind : "items");
       let sent = 0;
       for (const t of targets ?? []) {
         const msg: Record<string, unknown> = { text, parse_mode: "HTML", link_preview_options: { is_disabled: true } };

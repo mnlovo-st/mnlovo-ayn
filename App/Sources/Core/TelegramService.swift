@@ -16,9 +16,14 @@ final class TelegramService {
         var type: String
         var enabled: Bool
         var role: String = "owner"
+        /// Which kinds of message this chat gets (see `Route`); worked out by the server.
+        var routes: [String] = []
+        var custom: Bool = false
 
-        init(id: Int64, title: String, type: String, enabled: Bool, role: String = "owner") {
+        init(id: Int64, title: String, type: String, enabled: Bool, role: String = "owner",
+             routes: [String] = [], custom: Bool = false) {
             self.id = id; self.title = title; self.type = type; self.enabled = enabled; self.role = role
+            self.routes = routes; self.custom = custom
         }
         init(from d: Decoder) throws {
             let c = try d.container(keyedBy: CodingKeys.self)
@@ -27,9 +32,12 @@ final class TelegramService {
             type = try c.decodeIfPresent(String.self, forKey: .type) ?? "private"
             enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
             role = try c.decodeIfPresent(String.self, forKey: .role) ?? "owner"
+            routes = try c.decodeIfPresent([String].self, forKey: .routes) ?? []
+            custom = try c.decodeIfPresent(Bool.self, forKey: .custom) ?? false
         }
 
         var isFriend: Bool { role == "friend" }
+        var isBotChat: Bool { type == "private" && !isFriend }
         var typeTitle: String {
             if isFriend { return tr("شخص ثاني", "Another person") }
             switch type {
@@ -44,6 +52,38 @@ final class TelegramService {
             case "channel": return "megaphone.fill"
             case "group", "supergroup": return "person.3.fill"
             default: return "paperplane.fill"
+            }
+        }
+    }
+
+    /// The four kinds of message, each sent only to the chats that take it.
+    /// Defaults (set on the server): items → the first group/channel/person added (the bot chat if
+    /// there's nothing else); the intruder photo → the bot chat; reminders and wrong attempts → nowhere.
+    enum Route: String, CaseIterable, Identifiable {
+        case items, intruder, attempts, alerts
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .items: return tr("الحسابات وكلمات السر والحساس والسري", "Accounts, passwords, sensitive & secret")
+            case .intruder: return tr("صورة المحاولة الخاطئة", "Wrong-attempt photo")
+            case .attempts: return tr("محاولات الدخول الخاطئة", "Wrong sign-in attempts")
+            case .alerts: return tr("التنبيهات (التذكيرات)", "Alerts (reminders)")
+            }
+        }
+        var short: String {
+            switch self {
+            case .items: return tr("العناصر", "Items")
+            case .intruder: return tr("صورة المتطفل", "Intruder photo")
+            case .attempts: return tr("المحاولات", "Attempts")
+            case .alerts: return tr("التنبيهات", "Alerts")
+            }
+        }
+        var icon: String {
+            switch self {
+            case .items: return "key.horizontal.fill"
+            case .intruder: return "camera.fill"
+            case .attempts: return "exclamationmark.lock.fill"
+            case .alerts: return "bell.fill"
             }
         }
     }
@@ -179,7 +219,8 @@ final class TelegramService {
         let list = (r["targets"] as? [[String: Any]] ?? []).compactMap { t -> Target? in
             guard let id = (t["chat_id"] as? NSNumber)?.int64Value else { return nil }
             return Target(id: id, title: t["title"] as? String ?? "\(id)", type: t["type"] as? String ?? "private",
-                          enabled: t["enabled"] as? Bool ?? true, role: t["role"] as? String ?? "owner")
+                          enabled: t["enabled"] as? Bool ?? true, role: t["role"] as? String ?? "owner",
+                          routes: t["routes"] as? [String] ?? [], custom: t["custom"] as? Bool ?? false)
         }
         var s = settings
         let wasEmpty = s.targets.isEmpty
@@ -197,6 +238,19 @@ final class TelegramService {
         settings = s
     }
 
+    /// Saves who gets what, for every linked chat at once.
+    func setRoutes(_ map: [Int64: Set<Route>]) async throws {
+        var body: [String: [String]] = [:]
+        for (id, set) in map { body[String(id)] = set.map(\.rawValue).sorted() }
+        _ = try await call("routes", ["routes": body])
+        try await refresh()
+    }
+
+    func resetRoutes() async throws {
+        _ = try await call("routes", ["reset": true])
+        try await refresh()
+    }
+
     func remove(_ target: Target) async throws {
         _ = try await call("remove", ["chat_id": target.id])
         var s = settings
@@ -208,8 +262,8 @@ final class TelegramService {
     /// Sends to every enabled linked chat; returns how many received it.
     /// `copy` adds a button under the message that copies exactly that text when tapped.
     @discardableResult
-    func send(_ html: String, copy: String? = nil) async throws -> Int {
-        var payload: [String: Any] = ["text": html]
+    func send(_ html: String, copy: String? = nil, kind: Route = .items) async throws -> Int {
+        var payload: [String: Any] = ["text": html, "kind": kind.rawValue]
         if let copy, !copy.isEmpty { payload["copy"] = copy }
         let r = try await call("send", payload)
         return (r["sent"] as? NSNumber)?.intValue ?? 0
@@ -221,19 +275,10 @@ final class TelegramService {
     func sendAccountNow(_ a: AccountItem, cipher: Cipher?, key: String = "") async throws -> Int {
         let body = format(account: a, new: true, s: settings)
         if let cipher {
+            // Nothing but the cipher, blurred: copying the whole message gives exactly what the
+            // app's decoder takes — no title, no date, no button.
             let blob = cipher.encode(plainAccount(a), key: key)
-            let header = tr("🔐 <b>حساب مشفّر</b>", "🔐 <b>Encrypted account</b>")
-            let how = cipher == .aes
-                ? tr("اضغط الزر تحت وينسخ الشفرة بنفسه، وبعدين الصقها في «أداة التشفير» بالتطبيق مع كلمة المرور 🔑",
-                     "Tap the button below to copy the cipher, then paste it into the app's Cipher tool with the password 🔑")
-                : tr("اضغط الزر تحت وينسخ الشفرة بنفسه، وبعدين الصقها في «أداة التشفير» بالتطبيق 🔓",
-                     "Tap the button below to copy the cipher, then paste it into the app's Cipher tool 🔓")
-            // The cipher text is blurred like everything else, so it can't sit in a <code> block
-            // (Telegram won't blur those). The copy button under the message hands over exactly
-            // the text the app's decoder expects — no stray header, no missing character.
-            let msg = "\(header)\n\n<tg-spoiler>\(Self.esc(blob))</tg-spoiler>\n\n<i>\(how)</i>"
-                + footer(tr("#حسابات", "#accounts"))
-            return try await send(msg, copy: blob)
+            return try await send("<tg-spoiler>\(Self.esc(blob))</tg-spoiler>")
         }
         return try await send(wrap(body))
     }
@@ -248,15 +293,29 @@ final class TelegramService {
         return lines.joined(separator: "\n")
     }
 
-    /// Sends an intruder snapshot straight to Telegram the moment it's taken (works while the app is locked).
-    func sendIntruderAlert(photo: Data?, reason: String, attempt: Int = 0) {
+    /// The wrong-attempt photo, to the chats that take "intruder" (the bot chat by default).
+    func sendIntruderAlert(photo: Data, reason: String, attempt: Int = 0) {
         guard settings.intruderAlerts, cloudReady, !settings.targets.isEmpty else { return }
+        alert(caption(reason, attempt), photo: photo, kind: .intruder)
+    }
+
+    /// Every wrong attempt as a line of text, to the chats that take "attempts" (none by default).
+    func sendAttemptAlert(reason: String, attempt: Int) {
+        guard cloudReady, !settings.targets.isEmpty,
+              settings.targets.contains(where: { $0.enabled && $0.routes.contains(Route.attempts.rawValue) }) else { return }
+        alert(caption(reason, attempt), photo: nil, kind: .attempts)
+    }
+
+    private func caption(_ reason: String, _ attempt: Int) -> String {
         let when = Fmt.date(Date())
         let nth = attempt > 0 ? tr(" · المحاولة رقم \(attempt)", " · attempt \(attempt)") : ""
-        let caption = tr("🚨 <b>محاولة دخول للتطبيق</b>\n\n\(reason)\(nth)\n\n<i>#متطفل · \(Self.esc(when))</i>",
-                         "🚨 <b>App access attempt</b>\n\n\(reason)\(nth)\n\n<i>#intruder · \(Self.esc(when))</i>")
+        return tr("🚨 <b>محاولة دخول للتطبيق</b>\n\n\(reason)\(nth)\n\n<i>#متطفل · \(Self.esc(when))</i>",
+                  "🚨 <b>App access attempt</b>\n\n\(reason)\(nth)\n\n<i>#intruder · \(Self.esc(when))</i>")
+    }
+
+    private func alert(_ caption: String, photo: Data?, kind: Route) {
         Task {
-            var payload: [String: Any] = ["caption": caption]
+            var payload: [String: Any] = ["caption": caption, "kind": kind.rawValue]
             if let photo { payload["photo"] = photo.base64EncodedString() }
             _ = try? await call("alert", payload)
         }
@@ -295,9 +354,14 @@ final class TelegramService {
         }
         guard var text else { return }
         text = wrap(text)
+        let kind: Route
+        switch event {
+        case .reminderAdded, .reminderUpdated, .reminderDone: kind = .alerts
+        default: kind = .items
+        }
         Task {
             do {
-                let n = try await send(text)
+                let n = try await send(text, kind: kind)
                 if n == 0 { try? await refresh() }
                 else { NotificationCenter.default.post(name: .aynTelegramSent, object: nil) }
                 UserDefaults.standard.removeObject(forKey: "tg.lastError")

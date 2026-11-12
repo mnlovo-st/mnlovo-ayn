@@ -442,12 +442,14 @@ final class AppState: ObservableObject {
                 // Telegram gets the finished card (photo + name, date, time, attempt), not the bare frame.
                 let card = photo.flatMap { UIImage(data: $0) }
                     .flatMap { IntruderStamp.stamped($0, event: event).jpegData(compressionQuality: 0.85) }
-                TelegramService.shared.sendIntruderAlert(photo: card ?? photo, reason: title, attempt: n)
+                if let shot = card ?? photo {
+                    TelegramService.shared.sendIntruderAlert(photo: shot, reason: title, attempt: n)
+                }
             }
         } else {
             VaultStorage.writeInbox(IntruderEvent(reason: reason, photo: nil, attempt: n))
-            TelegramService.shared.sendIntruderAlert(photo: nil, reason: title, attempt: n)
         }
+        TelegramService.shared.sendAttemptAlert(reason: title, attempt: n)
     }
 
     @discardableResult

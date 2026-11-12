@@ -404,6 +404,7 @@ struct TelegramSetupView: View {
     @State private var exclusive = false
     @State private var shareURL: URL?
     @State private var baseline: Set<Int64>?
+    @State private var showRouting = false
 
     private let tg = TelegramService.shared
     private let blue = TelegramService.blue
@@ -574,6 +575,8 @@ struct TelegramSetupView: View {
             }
             .glass(14)
 
+            advancedRouting
+
             // what gets sent
             VStack(alignment: .leading, spacing: 0) {
                 Text(tr("شو يوصل", "What gets sent")).font(Theme.font(16, .heavy)).foregroundStyle(Theme.text).padding(.bottom, 6)
@@ -609,6 +612,102 @@ struct TelegramSetupView: View {
             s.askEachTime = new.askEachTime; s.intruderAlerts = new.intruderAlerts
             tg.settings = s
         }
+    }
+
+    // MARK: Advanced: what goes where
+
+    /// Per chat: which of the four kinds of message it receives.
+    private var advancedRouting: some View {
+        DisclosureGroup(isExpanded: $showRouting) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(tr("افتراضياً: الحسابات وكلمات السر والحساس والسري تروح لأول قروب أو قناة أو شخص تضيفه (أو البوت إذا ما أضفت شي)، وصورة المحاولة الخاطئة للبوت بس، والتنبيهات ومحاولات الدخول الخاطئة مطفأة. وكل الرسايل مشوّشة وتنكشف باللمس.",
+                        "By default: accounts, passwords, sensitive and secret items go to the first group, channel or person you add (or the bot if there's nothing else), the wrong-attempt photo to the bot only, and alerts and wrong attempts are off. Every message is blurred until tapped."))
+                    .font(Theme.font(12)).foregroundStyle(Theme.sub)
+                    .fixedSize(horizontal: false, vertical: true)
+                ForEach(settings.targets) { t in routeCard(t) }
+                if settings.targets.contains(where: \.custom) {
+                    Button {
+                        Task { await resetRoutes() }
+                    } label: {
+                        Label(tr("رجّع الافتراضي", "Back to defaults"), systemImage: "arrow.uturn.backward")
+                            .font(Theme.font(13, .bold)).foregroundStyle(blue)
+                    }
+                    .buttonStyle(PressScale())
+                }
+            }
+            .padding(.top, 10)
+        } label: {
+            Label(tr("إعدادات متقدمة: شو يوصل وين", "Advanced: what goes where"), systemImage: "slider.horizontal.3")
+                .font(Theme.font(15, .heavy)).foregroundStyle(Theme.text)
+        }
+        .tint(blue)
+        .glass(14)
+    }
+
+    private func routeCard(_ t: TelegramService.Target) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: t.isBotChat ? "paperplane.fill" : t.icon).foregroundStyle(blue)
+                Text(t.isBotChat ? tr("البوت (محادثتك الخاصة)", "The bot (your private chat)") : t.title)
+                    .font(Theme.font(14, .bold)).foregroundStyle(Theme.text).lineLimit(1)
+                Spacer()
+                Text(t.typeTitle).font(Theme.font(11)).foregroundStyle(Theme.faint)
+            }
+            ForEach(TelegramService.Route.allCases) { r in
+                let on = t.routes.contains(r.rawValue)
+                Button {
+                    Haptics.tap()
+                    Task { await setRoute(t, r, !on) }
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: r.icon).font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(on ? blue : Theme.faint).frame(width: 22)
+                        Text(r.title).font(Theme.font(13, .semibold))
+                            .foregroundStyle(on ? Theme.text : Theme.sub)
+                            .multilineTextAlignment(.leading)
+                        Spacer(minLength: 6)
+                        Image(systemName: on ? "checkmark.circle.fill" : "circle")
+                            .font(.system(size: 19, weight: .semibold))
+                            .foregroundStyle(on ? Theme.accent : Theme.faint)
+                    }
+                    .padding(.vertical, 6)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(busy == "routes")
+            }
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 14).fill(Theme.surface))
+        .opacity(t.enabled ? 1 : 0.5)
+    }
+
+    private func setRoute(_ t: TelegramService.Target, _ r: TelegramService.Route, _ on: Bool) async {
+        busy = "routes"; defer { busy = nil }
+        var map: [Int64: Set<TelegramService.Route>] = [:]
+        for x in settings.targets {
+            map[x.id] = Set(x.routes.compactMap(TelegramService.Route.init(rawValue:)))
+        }
+        if on { map[t.id, default: []].insert(r) } else { map[t.id, default: []].remove(r) }
+        // show it straight away, then let the server confirm
+        if let i = settings.targets.firstIndex(where: { $0.id == t.id }) {
+            settings.targets[i].routes = map[t.id]!.map(\.rawValue)
+        }
+        do {
+            try await tg.setRoutes(map)
+            settings = tg.settings
+            error = nil
+        } catch {
+            self.error = error.localizedDescription
+            settings = tg.settings
+            FX.error()
+        }
+    }
+
+    private func resetRoutes() async {
+        busy = "routes"; defer { busy = nil }
+        do { try await tg.resetRoutes(); settings = tg.settings; error = nil }
+        catch { self.error = error.localizedDescription; FX.error() }
     }
 
     /// If Telegram said "linked" but the app hasn't noticed yet.
